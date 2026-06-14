@@ -37,7 +37,8 @@ public class FestivalService {
             Integer size,
             String eventStartDate,
             String region,
-            String category
+            String category,
+            String keyword
     ) {
         int pageNo = validatePage(page);
         int numOfRows = validateSize(size);
@@ -57,7 +58,10 @@ public class FestivalService {
                 numOfRows
         );
 
-        return applyCategoryFilter(response, category);
+        FestivalListResponse categoryFilteredResponse =
+                applyCategoryFilter(response, category);
+
+        return applyKeywordSearch(categoryFilteredResponse, keyword);
     }
 
     public String getFestivalListRaw(
@@ -98,6 +102,51 @@ public class FestivalService {
                 .size(response.getSize())
                 .totalCount(filteredItems.size())
                 .build();
+    }
+
+    private FestivalListResponse applyKeywordSearch(
+            FestivalListResponse response,
+            String keyword
+    ) {
+        if (keyword == null || keyword.isBlank()) {
+            return response;
+        }
+
+        String normalizedKeyword = keyword.trim().toLowerCase();
+
+        List<FestivalSummaryResponse> searchedItems = response.getItems()
+                .stream()
+                .filter(item -> containsKeyword(item, normalizedKeyword))
+                .collect(Collectors.toList());
+
+        return FestivalListResponse.builder()
+                .items(searchedItems)
+                .page(response.getPage())
+                .size(response.getSize())
+                .totalCount(searchedItems.size())
+                .build();
+    }
+
+    private boolean containsKeyword(
+            FestivalSummaryResponse item,
+            String keyword
+    ) {
+        String searchableText = String.join(" ",
+                nullToEmpty(item.getTitle()),
+                nullToEmpty(item.getRegion()),
+                nullToEmpty(item.getCategory()),
+                nullToEmpty(item.getAddress())
+        ).toLowerCase();
+
+        return searchableText.contains(keyword);
+    }
+
+    private String nullToEmpty(String value) {
+        if (value == null) {
+            return "";
+        }
+
+        return value;
     }
 
     private int validatePage(Integer page) {
