@@ -72,10 +72,19 @@ public class FestivalService {
         String introRawJson = tourApiClient.getFestivalDetailIntroRaw(contentId);
         String imageRawJson = tourApiClient.getFestivalDetailImageRaw(contentId);
 
+        String fallbackListRawJson = tourApiClient.getFestivalListRaw(
+                1,
+                100,
+                "20200101",
+                null
+        );
+
         return festivalMapper.toFestivalDetailResponse(
                 commonRawJson,
                 introRawJson,
-                imageRawJson
+                imageRawJson,
+                fallbackListRawJson,
+                contentId
         );
     }
 

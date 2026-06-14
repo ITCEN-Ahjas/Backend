@@ -56,7 +56,9 @@ public class FestivalMapper {
     public FestivalDetailResponse toFestivalDetailResponse(
             String commonRawJson,
             String introRawJson,
-            String imageRawJson
+            String imageRawJson,
+            String fallbackListRawJson,
+            String contentId
     ) {
         try {
             JsonNode commonBody = objectMapper.readTree(commonRawJson)
@@ -71,24 +73,45 @@ public class FestivalMapper {
                     .path("response")
                     .path("body");
 
+            JsonNode fallbackBody = objectMapper.readTree(fallbackListRawJson)
+                    .path("response")
+                    .path("body");
+
             JsonNode commonItem = extractFirstItem(commonBody);
             JsonNode introItem = extractFirstItem(introBody);
+            JsonNode fallbackItem = extractItemByContentId(fallbackBody, contentId);
 
-            String title = getText(commonItem, "title");
+            JsonNode baseItem = hasText(getText(commonItem, "title"))
+                    ? commonItem
+                    : fallbackItem;
+
+            String title = getText(baseItem, "title");
             String address = buildAddress(
-                    getText(commonItem, "addr1"),
-                    getText(commonItem, "addr2")
+                    getText(baseItem, "addr1"),
+                    getText(baseItem, "addr2")
             );
-            String startDate = getText(introItem, "eventstartdate");
-            String endDate = getText(introItem, "eventenddate");
 
-            List<String> imageUrls = extractImageUrls(commonItem, imageBody);
+            String startDate = firstNonBlank(
+                    getText(introItem, "eventstartdate"),
+                    getText(baseItem, "eventstartdate")
+            );
+
+            String endDate = firstNonBlank(
+                    getText(introItem, "eventenddate"),
+                    getText(baseItem, "eventenddate")
+            );
+
+            List<String> imageUrls = extractImageUrls(baseItem, imageBody);
             String imageUrl = imageUrls.isEmpty()
-                    ? resolveImageUrl(commonItem)
+                    ? resolveImageUrl(baseItem)
                     : imageUrls.get(0);
 
             return FestivalDetailResponse.builder()
-                    .id(getText(commonItem, "contentid"))
+                    .id(firstNonBlank(
+                            getText(baseItem, "contentid"),
+                            getText(introItem, "contentid"),
+                            contentId
+                    ))
                     .title(title)
                     .region(extractRegion(address))
                     .category(resolveCategory(title, address))
@@ -98,11 +121,11 @@ public class FestivalMapper {
                     .address(address)
                     .imageUrl(imageUrl)
                     .imageUrls(imageUrls)
-                    .tel(getText(commonItem, "tel"))
+                    .tel(getText(baseItem, "tel"))
                     .homepage(extractHomepageUrl(getText(commonItem, "homepage")))
                     .overview(cleanHtml(getText(commonItem, "overview")))
-                    .mapX(getText(commonItem, "mapx"))
-                    .mapY(getText(commonItem, "mapy"))
+                    .mapX(getText(baseItem, "mapx"))
+                    .mapY(getText(baseItem, "mapy"))
                     .eventPlace(getText(introItem, "eventplace"))
                     .playTime(cleanHtml(getText(introItem, "playtime")))
                     .useTimeFestival(cleanHtml(getText(introItem, "usetimefestival")))
@@ -145,6 +168,27 @@ public class FestivalMapper {
         }
 
         if (itemNode.isObject()) {
+            return itemNode;
+        }
+
+        return objectMapper.createObjectNode();
+    }
+
+    private JsonNode extractItemByContentId(
+            JsonNode body,
+            String contentId
+    ) {
+        JsonNode itemNode = body.path("items").path("item");
+
+        if (itemNode.isArray()) {
+            for (JsonNode item : itemNode) {
+                if (contentId.equals(getText(item, "contentid"))) {
+                    return item;
+                }
+            }
+        }
+
+        if (itemNode.isObject() && contentId.equals(getText(itemNode, "contentid"))) {
             return itemNode;
         }
 
@@ -203,12 +247,12 @@ public class FestivalMapper {
     }
 
     private List<String> extractImageUrls(
-            JsonNode commonItem,
+            JsonNode baseItem,
             JsonNode imageBody
     ) {
         Set<String> imageUrlSet = new LinkedHashSet<>();
 
-        String firstImage = resolveImageUrl(commonItem);
+        String firstImage = resolveImageUrl(baseItem);
         if (!firstImage.isBlank()) {
             imageUrlSet.add(firstImage);
         }
@@ -359,5 +403,19 @@ public class FestivalMapper {
         }
 
         return getText(introItem, "sponsor2");
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+
+        return "";
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }
