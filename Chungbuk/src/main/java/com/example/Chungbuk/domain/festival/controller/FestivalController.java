@@ -21,12 +21,14 @@ public class FestivalController {
     public FestivalListResponse getFestivalList(
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer size,
-            @RequestParam(required = false) String eventStartDate
+            @RequestParam(required = false) String eventStartDate,
+            @RequestParam(required = false) String region
     ) {
         return festivalService.getFestivalList(
                 page,
                 size,
-                eventStartDate
+                eventStartDate,
+                region
         );
     }
 
