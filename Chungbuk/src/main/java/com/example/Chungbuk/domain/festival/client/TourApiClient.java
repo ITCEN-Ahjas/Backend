@@ -9,6 +9,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 public class TourApiClient {
 
     private static final String SEARCH_FESTIVAL_PATH = "/searchFestival2";
+    private static final String AREA_BASED_LIST_PATH = "/areaBasedList2";
     private static final String DETAIL_COMMON_PATH = "/detailCommon2";
     private static final String DETAIL_INTRO_PATH = "/detailIntro2";
     private static final String DETAIL_IMAGE_PATH = "/detailImage2";
@@ -42,6 +43,34 @@ public class TourApiClient {
 
         if (sigunguCode != null && !sigunguCode.isBlank()) {
             builder.queryParam("sigunguCode", sigunguCode);
+        }
+
+        String url = builder
+                .build()
+                .encode()
+                .toUriString();
+
+        return restTemplate.getForObject(url, String.class);
+    }
+
+    public String getExperienceListRaw(
+            int page,
+            int size,
+            String sigunguCode,
+            String contentTypeId
+    ) {
+        UriComponentsBuilder builder = createBaseBuilder(AREA_BASED_LIST_PATH)
+                .queryParam("numOfRows", size)
+                .queryParam("pageNo", page)
+                .queryParam("arrange", "A")
+                .queryParam("areaCode", CHUNGBUK_AREA_CODE);
+
+        if (sigunguCode != null && !sigunguCode.isBlank()) {
+            builder.queryParam("sigunguCode", sigunguCode);
+        }
+
+        if (contentTypeId != null && !contentTypeId.isBlank()) {
+            builder.queryParam("contentTypeId", contentTypeId);
         }
 
         String url = builder

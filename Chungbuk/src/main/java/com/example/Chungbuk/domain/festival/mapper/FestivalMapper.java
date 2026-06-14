@@ -1,5 +1,7 @@
 package com.example.Chungbuk.domain.festival.mapper;
 
+import com.example.Chungbuk.domain.festival.dto.response.ExperienceListResponse;
+import com.example.Chungbuk.domain.festival.dto.response.ExperienceSummaryResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalDetailResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalListResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalSummaryResponse;
@@ -39,7 +41,7 @@ public class FestivalMapper {
             JsonNode body = root.path("response").path("body");
 
             int totalCount = body.path("totalCount").asInt(0);
-            List<FestivalSummaryResponse> items = extractItems(body);
+            List<FestivalSummaryResponse> items = extractFestivalItems(body);
 
             return FestivalListResponse.builder()
                     .items(items)
@@ -49,7 +51,31 @@ public class FestivalMapper {
                     .build();
 
         } catch (JsonProcessingException e) {
-            throw new IllegalStateException("TourAPI 응답 파싱에 실패했습니다.", e);
+            throw new IllegalStateException("TourAPI 축제 목록 응답 파싱에 실패했습니다.", e);
+        }
+    }
+
+    public ExperienceListResponse toExperienceListResponse(
+            String rawJson,
+            int page,
+            int size
+    ) {
+        try {
+            JsonNode root = objectMapper.readTree(rawJson);
+            JsonNode body = root.path("response").path("body");
+
+            int totalCount = body.path("totalCount").asInt(0);
+            List<ExperienceSummaryResponse> items = extractExperienceItems(body);
+
+            return ExperienceListResponse.builder()
+                    .items(items)
+                    .page(page)
+                    .size(size)
+                    .totalCount(totalCount)
+                    .build();
+
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("TourAPI 체험/관광 콘텐츠 응답 파싱에 실패했습니다.", e);
         }
     }
 
@@ -114,7 +140,7 @@ public class FestivalMapper {
                     ))
                     .title(title)
                     .region(extractRegion(address))
-                    .category(resolveCategory(title, address))
+                    .category(resolveFestivalCategory(title, address))
                     .status(resolveStatus(startDate, endDate))
                     .startDate(startDate)
                     .endDate(endDate)
@@ -137,7 +163,7 @@ public class FestivalMapper {
         }
     }
 
-    private List<FestivalSummaryResponse> extractItems(JsonNode body) {
+    private List<FestivalSummaryResponse> extractFestivalItems(JsonNode body) {
         List<FestivalSummaryResponse> result = new ArrayList<>();
 
         JsonNode itemNode = body.path("items").path("item");
@@ -148,13 +174,36 @@ public class FestivalMapper {
 
         if (itemNode.isArray()) {
             for (JsonNode item : itemNode) {
-                result.add(toSummaryResponse(item));
+                result.add(toFestivalSummaryResponse(item));
             }
             return result;
         }
 
         if (itemNode.isObject()) {
-            result.add(toSummaryResponse(itemNode));
+            result.add(toFestivalSummaryResponse(itemNode));
+        }
+
+        return result;
+    }
+
+    private List<ExperienceSummaryResponse> extractExperienceItems(JsonNode body) {
+        List<ExperienceSummaryResponse> result = new ArrayList<>();
+
+        JsonNode itemNode = body.path("items").path("item");
+
+        if (itemNode.isMissingNode() || itemNode.isNull()) {
+            return result;
+        }
+
+        if (itemNode.isArray()) {
+            for (JsonNode item : itemNode) {
+                result.add(toExperienceSummaryResponse(item));
+            }
+            return result;
+        }
+
+        if (itemNode.isObject()) {
+            result.add(toExperienceSummaryResponse(itemNode));
         }
 
         return result;
@@ -195,7 +244,7 @@ public class FestivalMapper {
         return objectMapper.createObjectNode();
     }
 
-    private FestivalSummaryResponse toSummaryResponse(JsonNode item) {
+    private FestivalSummaryResponse toFestivalSummaryResponse(JsonNode item) {
         String title = getText(item, "title");
         String address = buildAddress(
                 getText(item, "addr1"),
@@ -208,7 +257,7 @@ public class FestivalMapper {
                 .id(getText(item, "contentid"))
                 .title(title)
                 .region(extractRegion(address))
-                .category(resolveCategory(title, address))
+                .category(resolveFestivalCategory(title, address))
                 .status(resolveStatus(startDate, endDate))
                 .startDate(startDate)
                 .endDate(endDate)
@@ -217,6 +266,28 @@ public class FestivalMapper {
                 .tel(getText(item, "tel"))
                 .mapX(getText(item, "mapx"))
                 .mapY(getText(item, "mapy"))
+                .build();
+    }
+
+    private ExperienceSummaryResponse toExperienceSummaryResponse(JsonNode item) {
+        String title = getText(item, "title");
+        String address = buildAddress(
+                getText(item, "addr1"),
+                getText(item, "addr2")
+        );
+        String contentTypeId = getText(item, "contenttypeid");
+
+        return ExperienceSummaryResponse.builder()
+                .id(getText(item, "contentid"))
+                .title(title)
+                .region(extractRegion(address))
+                .category(resolveExperienceCategory(contentTypeId))
+                .address(address)
+                .imageUrl(resolveImageUrl(item))
+                .tel(getText(item, "tel"))
+                .mapX(getText(item, "mapx"))
+                .mapY(getText(item, "mapy"))
+                .contentTypeId(contentTypeId)
                 .build();
     }
 
@@ -305,7 +376,7 @@ public class FestivalMapper {
         return "충북";
     }
 
-    private String resolveCategory(String title, String address) {
+    private String resolveFestivalCategory(String title, String address) {
         String text = title + " " + address;
 
         if (containsAny(text, "와인", "대추", "음식", "먹거리", "푸드", "시장")) {
@@ -329,6 +400,26 @@ public class FestivalMapper {
         }
 
         return "문화축제";
+    }
+
+    private String resolveExperienceCategory(String contentTypeId) {
+        if (contentTypeId.equals("12")) {
+            return "관광지";
+        }
+
+        if (contentTypeId.equals("14")) {
+            return "문화시설";
+        }
+
+        if (contentTypeId.equals("25")) {
+            return "여행코스";
+        }
+
+        if (contentTypeId.equals("28")) {
+            return "레포츠";
+        }
+
+        return "체험/관광";
     }
 
     private boolean containsAny(String text, String... keywords) {

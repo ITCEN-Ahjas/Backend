@@ -2,6 +2,7 @@ package com.example.Chungbuk.domain.festival.service;
 
 import com.example.Chungbuk.domain.festival.client.TourApiClient;
 import com.example.Chungbuk.domain.festival.constant.ChungbukRegion;
+import com.example.Chungbuk.domain.festival.dto.response.ExperienceListResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalDetailResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalListResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalSummaryResponse;
@@ -63,6 +64,31 @@ public class FestivalService {
                 applyCategoryFilter(response, category);
 
         return applyKeywordSearch(categoryFilteredResponse, keyword);
+    }
+
+    public ExperienceListResponse getExperienceList(
+            Integer page,
+            Integer size,
+            String region,
+            String contentTypeId
+    ) {
+        int pageNo = validatePage(page);
+        int numOfRows = validateSize(size);
+        String sigunguCode = ChungbukRegion.findSigunguCodeByName(region);
+        String resolvedContentTypeId = resolveExperienceContentTypeId(contentTypeId);
+
+        String rawJson = tourApiClient.getExperienceListRaw(
+                pageNo,
+                numOfRows,
+                sigunguCode,
+                resolvedContentTypeId
+        );
+
+        return festivalMapper.toExperienceListResponse(
+                rawJson,
+                pageNo,
+                numOfRows
+        );
     }
 
     public FestivalDetailResponse getFestivalDetail(String contentId) {
@@ -171,6 +197,34 @@ public class FestivalService {
         }
 
         return value;
+    }
+
+    private String resolveExperienceContentTypeId(String contentTypeId) {
+        if (contentTypeId == null || contentTypeId.isBlank()) {
+            return "12";
+        }
+
+        if (contentTypeId.equals("전체")) {
+            return null;
+        }
+
+        if (contentTypeId.equals("관광지")) {
+            return "12";
+        }
+
+        if (contentTypeId.equals("문화시설")) {
+            return "14";
+        }
+
+        if (contentTypeId.equals("여행코스")) {
+            return "25";
+        }
+
+        if (contentTypeId.equals("레포츠") || contentTypeId.equals("액티비티")) {
+            return "28";
+        }
+
+        return contentTypeId;
     }
 
     private void validateContentId(String contentId) {

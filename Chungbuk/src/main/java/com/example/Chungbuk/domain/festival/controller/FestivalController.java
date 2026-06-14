@@ -1,5 +1,6 @@
 package com.example.Chungbuk.domain.festival.controller;
 
+import com.example.Chungbuk.domain.festival.dto.response.ExperienceListResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalDetailResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalListResponse;
 import com.example.Chungbuk.domain.festival.service.FestivalService;
@@ -35,6 +36,21 @@ public class FestivalController {
                 region,
                 category,
                 keyword
+        );
+    }
+
+    @GetMapping("/experiences")
+    public ExperienceListResponse getExperienceList(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String region,
+            @RequestParam(required = false) String contentTypeId
+    ) {
+        return festivalService.getExperienceList(
+                page,
+                size,
+                region,
+                contentTypeId
         );
     }
 
