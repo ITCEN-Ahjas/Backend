@@ -1,15 +1,13 @@
 package com.example.Chungbuk.domain.festival.service;
 
 import com.example.Chungbuk.domain.festival.client.TourApiClient;
+import com.example.Chungbuk.domain.festival.constant.ChungbukRegion;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalListResponse;
-import com.example.Chungbuk.domain.festival.dto.response.FestivalSummaryResponse;
 import com.example.Chungbuk.domain.festival.mapper.FestivalMapper;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 public class FestivalService {
@@ -40,57 +38,39 @@ public class FestivalService {
         int pageNo = validatePage(page);
         int numOfRows = validateSize(size);
         String startDate = resolveEventStartDate(eventStartDate);
+        String sigunguCode = ChungbukRegion.findSigunguCodeByName(region);
 
         String rawJson = tourApiClient.getFestivalListRaw(
                 pageNo,
                 numOfRows,
-                startDate
+                startDate,
+                sigunguCode
         );
 
-        FestivalListResponse response = festivalMapper.toFestivalListResponse(
+        return festivalMapper.toFestivalListResponse(
                 rawJson,
                 pageNo,
                 numOfRows
         );
-
-        return applyRegionFilter(response, region);
     }
 
     public String getFestivalListRaw(
             Integer page,
             Integer size,
-            String eventStartDate
+            String eventStartDate,
+            String region
     ) {
         int pageNo = validatePage(page);
         int numOfRows = validateSize(size);
         String startDate = resolveEventStartDate(eventStartDate);
+        String sigunguCode = ChungbukRegion.findSigunguCodeByName(region);
 
         return tourApiClient.getFestivalListRaw(
                 pageNo,
                 numOfRows,
-                startDate
+                startDate,
+                sigunguCode
         );
-    }
-
-    private FestivalListResponse applyRegionFilter(
-            FestivalListResponse response,
-            String region
-    ) {
-        if (region == null || region.isBlank() || region.equals("전체")) {
-            return response;
-        }
-
-        List<FestivalSummaryResponse> filteredItems = response.getItems()
-                .stream()
-                .filter(item -> region.equals(item.getRegion()))
-                .collect(Collectors.toList());
-
-        return FestivalListResponse.builder()
-                .items(filteredItems)
-                .page(response.getPage())
-                .size(response.getSize())
-                .totalCount(filteredItems.size())
-                .build();
     }
 
     private int validatePage(Integer page) {

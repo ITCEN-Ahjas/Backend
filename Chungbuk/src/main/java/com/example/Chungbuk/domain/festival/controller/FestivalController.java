@@ -36,12 +36,14 @@ public class FestivalController {
     public String getFestivalListRaw(
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer size,
-            @RequestParam(required = false) String eventStartDate
+            @RequestParam(required = false) String eventStartDate,
+            @RequestParam(required = false) String region
     ) {
         return festivalService.getFestivalListRaw(
                 page,
                 size,
-                eventStartDate
+                eventStartDate,
+                region
         );
     }
 }

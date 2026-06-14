@@ -22,8 +22,13 @@ public class TourApiClient {
         this.tourApiProperties = tourApiProperties;
     }
 
-    public String getFestivalListRaw(int page, int size, String eventStartDate) {
-        String url = UriComponentsBuilder
+    public String getFestivalListRaw(
+            int page,
+            int size,
+            String eventStartDate,
+            String sigunguCode
+    ) {
+        UriComponentsBuilder builder = UriComponentsBuilder
                 .fromUriString(tourApiProperties.getBaseUrl() + SEARCH_FESTIVAL_PATH)
                 .queryParam("serviceKey", tourApiProperties.getServiceKey())
                 .queryParam("MobileOS", tourApiProperties.getMobileOs())
@@ -33,7 +38,13 @@ public class TourApiClient {
                 .queryParam("pageNo", page)
                 .queryParam("arrange", "A")
                 .queryParam("areaCode", CHUNGBUK_AREA_CODE)
-                .queryParam("eventStartDate", eventStartDate)
+                .queryParam("eventStartDate", eventStartDate);
+
+        if (sigunguCode != null && !sigunguCode.isBlank()) {
+            builder.queryParam("sigunguCode", sigunguCode);
+        }
+
+        String url = builder
                 .build()
                 .encode()
                 .toUriString();
