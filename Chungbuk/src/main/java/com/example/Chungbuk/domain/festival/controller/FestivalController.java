@@ -20,16 +20,26 @@ public class FestivalController {
     @GetMapping
     public FestivalListResponse getFestivalList(
             @RequestParam(required = false) Integer page,
-            @RequestParam(required = false) Integer size
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String eventStartDate
     ) {
-        return festivalService.getFestivalList(page, size);
+        return festivalService.getFestivalList(
+                page,
+                size,
+                eventStartDate
+        );
     }
 
     @GetMapping("/raw")
     public String getFestivalListRaw(
             @RequestParam(required = false) Integer page,
-            @RequestParam(required = false) Integer size
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String eventStartDate
     ) {
-        return festivalService.getFestivalListRaw(page, size);
+        return festivalService.getFestivalListRaw(
+                page,
+                size,
+                eventStartDate
+        );
     }
 }

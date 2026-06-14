@@ -14,6 +14,8 @@ public class FestivalService {
     private static final int DEFAULT_PAGE = 1;
     private static final int DEFAULT_SIZE = 10;
     private static final int MAX_SIZE = 30;
+    private static final DateTimeFormatter TOUR_API_DATE_FORMAT =
+            DateTimeFormatter.ofPattern("yyyyMMdd");
 
     private final TourApiClient tourApiClient;
     private final FestivalMapper festivalMapper;
@@ -26,15 +28,19 @@ public class FestivalService {
         this.festivalMapper = festivalMapper;
     }
 
-    public FestivalListResponse getFestivalList(Integer page, Integer size) {
+    public FestivalListResponse getFestivalList(
+            Integer page,
+            Integer size,
+            String eventStartDate
+    ) {
         int pageNo = validatePage(page);
         int numOfRows = validateSize(size);
-        String eventStartDate = getDefaultEventStartDate();
+        String startDate = resolveEventStartDate(eventStartDate);
 
         String rawJson = tourApiClient.getFestivalListRaw(
                 pageNo,
                 numOfRows,
-                eventStartDate
+                startDate
         );
 
         return festivalMapper.toFestivalListResponse(
@@ -44,15 +50,19 @@ public class FestivalService {
         );
     }
 
-    public String getFestivalListRaw(Integer page, Integer size) {
+    public String getFestivalListRaw(
+            Integer page,
+            Integer size,
+            String eventStartDate
+    ) {
         int pageNo = validatePage(page);
         int numOfRows = validateSize(size);
-        String eventStartDate = getDefaultEventStartDate();
+        String startDate = resolveEventStartDate(eventStartDate);
 
         return tourApiClient.getFestivalListRaw(
                 pageNo,
                 numOfRows,
-                eventStartDate
+                startDate
         );
     }
 
@@ -72,9 +82,21 @@ public class FestivalService {
         return Math.min(size, MAX_SIZE);
     }
 
+    private String resolveEventStartDate(String eventStartDate) {
+        if (eventStartDate == null || eventStartDate.isBlank()) {
+            return getDefaultEventStartDate();
+        }
+
+        if (!eventStartDate.matches("\\d{8}")) {
+            return getDefaultEventStartDate();
+        }
+
+        return eventStartDate;
+    }
+
     private String getDefaultEventStartDate() {
         return LocalDate.now()
                 .withDayOfYear(1)
-                .format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+                .format(TOUR_API_DATE_FORMAT);
     }
 }
