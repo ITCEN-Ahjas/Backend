@@ -35,3 +35,7 @@ out/
 
 ### VS Code ###
 .vscode/
+
+### sercret key ###
+application-secret.properties
+.env
