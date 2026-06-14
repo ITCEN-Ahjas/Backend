@@ -1,5 +1,6 @@
 package com.example.Chungbuk.domain.festival.mapper;
 
+import com.example.Chungbuk.domain.festival.dto.response.FestivalDetailResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalListResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalSummaryResponse;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -11,13 +12,20 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Component
 public class FestivalMapper {
 
     private static final DateTimeFormatter TOUR_API_DATE_FORMAT =
             DateTimeFormatter.ofPattern("yyyyMMdd");
+
+    private static final Pattern HREF_PATTERN =
+            Pattern.compile("href=[\"']([^\"']+)[\"']");
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -45,6 +53,67 @@ public class FestivalMapper {
         }
     }
 
+    public FestivalDetailResponse toFestivalDetailResponse(
+            String commonRawJson,
+            String introRawJson,
+            String imageRawJson
+    ) {
+        try {
+            JsonNode commonBody = objectMapper.readTree(commonRawJson)
+                    .path("response")
+                    .path("body");
+
+            JsonNode introBody = objectMapper.readTree(introRawJson)
+                    .path("response")
+                    .path("body");
+
+            JsonNode imageBody = objectMapper.readTree(imageRawJson)
+                    .path("response")
+                    .path("body");
+
+            JsonNode commonItem = extractFirstItem(commonBody);
+            JsonNode introItem = extractFirstItem(introBody);
+
+            String title = getText(commonItem, "title");
+            String address = buildAddress(
+                    getText(commonItem, "addr1"),
+                    getText(commonItem, "addr2")
+            );
+            String startDate = getText(introItem, "eventstartdate");
+            String endDate = getText(introItem, "eventenddate");
+
+            List<String> imageUrls = extractImageUrls(commonItem, imageBody);
+            String imageUrl = imageUrls.isEmpty()
+                    ? resolveImageUrl(commonItem)
+                    : imageUrls.get(0);
+
+            return FestivalDetailResponse.builder()
+                    .id(getText(commonItem, "contentid"))
+                    .title(title)
+                    .region(extractRegion(address))
+                    .category(resolveCategory(title, address))
+                    .status(resolveStatus(startDate, endDate))
+                    .startDate(startDate)
+                    .endDate(endDate)
+                    .address(address)
+                    .imageUrl(imageUrl)
+                    .imageUrls(imageUrls)
+                    .tel(getText(commonItem, "tel"))
+                    .homepage(extractHomepageUrl(getText(commonItem, "homepage")))
+                    .overview(cleanHtml(getText(commonItem, "overview")))
+                    .mapX(getText(commonItem, "mapx"))
+                    .mapY(getText(commonItem, "mapy"))
+                    .eventPlace(getText(introItem, "eventplace"))
+                    .playTime(cleanHtml(getText(introItem, "playtime")))
+                    .useTimeFestival(cleanHtml(getText(introItem, "usetimefestival")))
+                    .sponsor(resolveSponsor(introItem))
+                    .build();
+
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("TourAPI 상세 응답 파싱에 실패했습니다.", e);
+        }
+    }
+
     private List<FestivalSummaryResponse> extractItems(JsonNode body) {
         List<FestivalSummaryResponse> result = new ArrayList<>();
 
@@ -66,6 +135,20 @@ public class FestivalMapper {
         }
 
         return result;
+    }
+
+    private JsonNode extractFirstItem(JsonNode body) {
+        JsonNode itemNode = body.path("items").path("item");
+
+        if (itemNode.isArray() && itemNode.size() > 0) {
+            return itemNode.get(0);
+        }
+
+        if (itemNode.isObject()) {
+            return itemNode;
+        }
+
+        return objectMapper.createObjectNode();
     }
 
     private FestivalSummaryResponse toSummaryResponse(JsonNode item) {
@@ -117,6 +200,49 @@ public class FestivalMapper {
         }
 
         return getText(item, "firstimage2");
+    }
+
+    private List<String> extractImageUrls(
+            JsonNode commonItem,
+            JsonNode imageBody
+    ) {
+        Set<String> imageUrlSet = new LinkedHashSet<>();
+
+        String firstImage = resolveImageUrl(commonItem);
+        if (!firstImage.isBlank()) {
+            imageUrlSet.add(firstImage);
+        }
+
+        JsonNode imageItemNode = imageBody.path("items").path("item");
+
+        if (imageItemNode.isArray()) {
+            for (JsonNode imageItem : imageItemNode) {
+                addImageUrl(imageUrlSet, imageItem);
+            }
+        }
+
+        if (imageItemNode.isObject()) {
+            addImageUrl(imageUrlSet, imageItemNode);
+        }
+
+        return new ArrayList<>(imageUrlSet);
+    }
+
+    private void addImageUrl(
+            Set<String> imageUrlSet,
+            JsonNode imageItem
+    ) {
+        String originImageUrl = getText(imageItem, "originimgurl");
+        String smallImageUrl = getText(imageItem, "smallimageurl");
+
+        if (!originImageUrl.isBlank()) {
+            imageUrlSet.add(originImageUrl);
+            return;
+        }
+
+        if (!smallImageUrl.isBlank()) {
+            imageUrlSet.add(smallImageUrl);
+        }
     }
 
     private String extractRegion(String address) {
@@ -194,5 +320,44 @@ public class FestivalMapper {
         } catch (DateTimeParseException e) {
             return "정보 없음";
         }
+    }
+
+    private String extractHomepageUrl(String homepage) {
+        if (homepage == null || homepage.isBlank()) {
+            return "";
+        }
+
+        Matcher matcher = HREF_PATTERN.matcher(homepage);
+
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+
+        return cleanHtml(homepage);
+    }
+
+    private String cleanHtml(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+
+        return value
+                .replaceAll("<[^>]*>", " ")
+                .replace("&nbsp;", " ")
+                .replace("&amp;", "&")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replaceAll("\\s+", " ")
+                .trim();
+    }
+
+    private String resolveSponsor(JsonNode introItem) {
+        String sponsor1 = getText(introItem, "sponsor1");
+
+        if (!sponsor1.isBlank()) {
+            return sponsor1;
+        }
+
+        return getText(introItem, "sponsor2");
     }
 }

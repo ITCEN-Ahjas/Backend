@@ -2,6 +2,7 @@ package com.example.Chungbuk.domain.festival.service;
 
 import com.example.Chungbuk.domain.festival.client.TourApiClient;
 import com.example.Chungbuk.domain.festival.constant.ChungbukRegion;
+import com.example.Chungbuk.domain.festival.dto.response.FestivalDetailResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalListResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalSummaryResponse;
 import com.example.Chungbuk.domain.festival.mapper.FestivalMapper;
@@ -62,6 +63,20 @@ public class FestivalService {
                 applyCategoryFilter(response, category);
 
         return applyKeywordSearch(categoryFilteredResponse, keyword);
+    }
+
+    public FestivalDetailResponse getFestivalDetail(String contentId) {
+        validateContentId(contentId);
+
+        String commonRawJson = tourApiClient.getFestivalDetailCommonRaw(contentId);
+        String introRawJson = tourApiClient.getFestivalDetailIntroRaw(contentId);
+        String imageRawJson = tourApiClient.getFestivalDetailImageRaw(contentId);
+
+        return festivalMapper.toFestivalDetailResponse(
+                commonRawJson,
+                introRawJson,
+                imageRawJson
+        );
     }
 
     public String getFestivalListRaw(
@@ -147,6 +162,12 @@ public class FestivalService {
         }
 
         return value;
+    }
+
+    private void validateContentId(String contentId) {
+        if (contentId == null || contentId.isBlank()) {
+            throw new IllegalArgumentException("contentId는 필수입니다.");
+        }
     }
 
     private int validatePage(Integer page) {

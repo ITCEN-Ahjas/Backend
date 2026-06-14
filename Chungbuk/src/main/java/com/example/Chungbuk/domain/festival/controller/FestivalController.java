@@ -1,8 +1,10 @@
 package com.example.Chungbuk.domain.festival.controller;
 
+import com.example.Chungbuk.domain.festival.dto.response.FestivalDetailResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalListResponse;
 import com.example.Chungbuk.domain.festival.service.FestivalService;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -34,6 +36,13 @@ public class FestivalController {
                 category,
                 keyword
         );
+    }
+
+    @GetMapping("/{contentId}")
+    public FestivalDetailResponse getFestivalDetail(
+            @PathVariable String contentId
+    ) {
+        return festivalService.getFestivalDetail(contentId);
     }
 
     @GetMapping("/raw")
