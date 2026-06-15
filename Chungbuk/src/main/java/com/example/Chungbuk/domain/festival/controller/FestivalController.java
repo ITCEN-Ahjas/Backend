@@ -1,0 +1,78 @@
+package com.example.Chungbuk.domain.festival.controller;
+
+import com.example.Chungbuk.domain.festival.dto.response.ExperienceListResponse;
+import com.example.Chungbuk.domain.festival.dto.response.FestivalDetailResponse;
+import com.example.Chungbuk.domain.festival.dto.response.FestivalListResponse;
+import com.example.Chungbuk.domain.festival.service.FestivalService;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/festivals")
+public class FestivalController {
+
+    private final FestivalService festivalService;
+
+    public FestivalController(FestivalService festivalService) {
+        this.festivalService = festivalService;
+    }
+
+    @GetMapping
+    public FestivalListResponse getFestivalList(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String eventStartDate,
+            @RequestParam(required = false) String region,
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) String keyword
+    ) {
+        return festivalService.getFestivalList(
+                page,
+                size,
+                eventStartDate,
+                region,
+                category,
+                keyword
+        );
+    }
+
+    @GetMapping("/experiences")
+    public ExperienceListResponse getExperienceList(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String region,
+            @RequestParam(required = false) String contentTypeId
+    ) {
+        return festivalService.getExperienceList(
+                page,
+                size,
+                region,
+                contentTypeId
+        );
+    }
+
+    @GetMapping("/{contentId}")
+    public FestivalDetailResponse getFestivalDetail(
+            @PathVariable String contentId
+    ) {
+        return festivalService.getFestivalDetail(contentId);
+    }
+
+    @GetMapping("/raw")
+    public String getFestivalListRaw(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String eventStartDate,
+            @RequestParam(required = false) String region
+    ) {
+        return festivalService.getFestivalListRaw(
+                page,
+                size,
+                eventStartDate,
+                region
+        );
+    }
+}
