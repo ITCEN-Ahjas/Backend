@@ -10,13 +10,27 @@ import lombok.Getter;
 public class ExperienceSummaryResponse {
 
     private String id;
+
+    private String contentTypeId;
+    private String cat1;
+    private String cat2;
+    private String cat3;
+
     private String title;
     private String region;
+
     private String category;
+    private String themeCategory;
+
     private String address;
     private String imageUrl;
     private String tel;
+
     private String mapX;
     private String mapY;
-    private String contentTypeId;
+
+    private String timeLabel;
+    private String timeValue;
+    private String extraLabel;
+    private String extraValue;
 }
