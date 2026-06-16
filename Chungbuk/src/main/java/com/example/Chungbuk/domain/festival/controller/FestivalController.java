@@ -4,6 +4,7 @@ import com.example.Chungbuk.domain.festival.dto.response.ExperienceListResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalDetailResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalListResponse;
 import com.example.Chungbuk.domain.festival.service.FestivalService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -12,24 +13,21 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/festivals")
+@RequiredArgsConstructor
 public class FestivalController {
 
     private final FestivalService festivalService;
 
-    public FestivalController(FestivalService festivalService) {
-        this.festivalService = festivalService;
-    }
-
     @GetMapping
-    public FestivalListResponse getFestivalList(
-            @RequestParam(required = false) Integer page,
-            @RequestParam(required = false) Integer size,
+    public FestivalListResponse getFestivals(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String eventStartDate,
             @RequestParam(required = false) String region,
-            @RequestParam(required = false) String category,
+            @RequestParam(defaultValue = "전체") String category,
             @RequestParam(required = false) String keyword
     ) {
-        return festivalService.getFestivalList(
+        return festivalService.getFestivals(
                 page,
                 size,
                 eventStartDate,
@@ -40,17 +38,36 @@ public class FestivalController {
     }
 
     @GetMapping("/experiences")
-    public ExperienceListResponse getExperienceList(
-            @RequestParam(required = false) Integer page,
-            @RequestParam(required = false) Integer size,
+    public ExperienceListResponse getExperiences(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String region,
-            @RequestParam(required = false) String contentTypeId
+            @RequestParam(defaultValue = "전체") String contentTypeId,
+            @RequestParam(defaultValue = "전체") String category,
+            @RequestParam(required = false) String keyword
     ) {
-        return festivalService.getExperienceList(
+        return festivalService.getExperiences(
                 page,
                 size,
                 region,
-                contentTypeId
+                contentTypeId,
+                category,
+                keyword
+        );
+    }
+
+    @GetMapping("/raw")
+    public String getFestivalRaw(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String eventStartDate,
+            @RequestParam(required = false) String region
+    ) {
+        return festivalService.getFestivalRaw(
+                page,
+                size,
+                eventStartDate,
+                region
         );
     }
 
@@ -59,20 +76,5 @@ public class FestivalController {
             @PathVariable String contentId
     ) {
         return festivalService.getFestivalDetail(contentId);
-    }
-
-    @GetMapping("/raw")
-    public String getFestivalListRaw(
-            @RequestParam(required = false) Integer page,
-            @RequestParam(required = false) Integer size,
-            @RequestParam(required = false) String eventStartDate,
-            @RequestParam(required = false) String region
-    ) {
-        return festivalService.getFestivalListRaw(
-                page,
-                size,
-                eventStartDate,
-                region
-        );
     }
 }

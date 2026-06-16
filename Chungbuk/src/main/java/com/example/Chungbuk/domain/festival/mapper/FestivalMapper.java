@@ -1,440 +1,935 @@
 package com.example.Chungbuk.domain.festival.mapper;
 
+import com.example.Chungbuk.domain.festival.constant.SupportedContentType;
+import com.example.Chungbuk.domain.festival.dto.response.ContentInfoResponse;
 import com.example.Chungbuk.domain.festival.dto.response.ExperienceListResponse;
 import com.example.Chungbuk.domain.festival.dto.response.ExperienceSummaryResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalDetailResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalListResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalSummaryResponse;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.stereotype.Component;
-
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import org.springframework.stereotype.Component;
 
 @Component
 public class FestivalMapper {
 
-    private static final DateTimeFormatter TOUR_API_DATE_FORMAT =
-            DateTimeFormatter.ofPattern("yyyyMMdd");
-
-    private static final Pattern HREF_PATTERN =
-            Pattern.compile("href=[\"']([^\"']+)[\"']");
-
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public FestivalListResponse toFestivalListResponse(
-            String rawJson,
-            int page,
-            int size
-    ) {
-        try {
-            JsonNode root = objectMapper.readTree(rawJson);
-            JsonNode body = root.path("response").path("body");
+    private static final String DEFAULT_FESTIVAL_CONTENT_TYPE_ID = "15";
+    private static final DateTimeFormatter TOUR_API_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
-            int totalCount = body.path("totalCount").asInt(0);
-            List<FestivalSummaryResponse> items = extractFestivalItems(body);
+    public FestivalListResponse toFestivalListResponse(String rawJson, int page, int size) {
+        try {
+            JsonNode body = getBody(rawJson);
+            JsonNode itemNode = body.path("items").path("item");
+
+            List<FestivalSummaryResponse> items = toItemNodeList(itemNode).stream()
+                    .map(this::toFestivalSummaryResponse)
+                    .filter(item -> SupportedContentType.isSupported(item.getContentTypeId()))
+                    .toList();
 
             return FestivalListResponse.builder()
                     .items(items)
                     .page(page)
                     .size(size)
-                    .totalCount(totalCount)
+                    .totalCount(items.size())
                     .build();
-
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("TourAPI 축제 목록 응답 파싱에 실패했습니다.", e);
-        }
-    }
-
-    public ExperienceListResponse toExperienceListResponse(
-            String rawJson,
-            int page,
-            int size
-    ) {
-        try {
-            JsonNode root = objectMapper.readTree(rawJson);
-            JsonNode body = root.path("response").path("body");
-
-            int totalCount = body.path("totalCount").asInt(0);
-            List<ExperienceSummaryResponse> items = extractExperienceItems(body);
-
-            return ExperienceListResponse.builder()
-                    .items(items)
+        } catch (Exception e) {
+            return FestivalListResponse.builder()
+                    .items(List.of())
                     .page(page)
                     .size(size)
-                    .totalCount(totalCount)
+                    .totalCount(0)
                     .build();
-
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("TourAPI 체험/관광 콘텐츠 응답 파싱에 실패했습니다.", e);
         }
     }
 
     public FestivalDetailResponse toFestivalDetailResponse(
-            String commonRawJson,
-            String introRawJson,
-            String imageRawJson,
+            String detailCommonRawJson,
+            String detailIntroRawJson,
+            String detailImageRawJson,
             String fallbackListRawJson,
             String contentId
     ) {
         try {
-            JsonNode commonBody = objectMapper.readTree(commonRawJson)
-                    .path("response")
-                    .path("body");
+            JsonNode commonItem = firstItem(detailCommonRawJson);
+            JsonNode introItem = firstItem(detailIntroRawJson);
+            JsonNode fallbackItem = findItemByContentId(fallbackListRawJson, contentId);
 
-            JsonNode introBody = objectMapper.readTree(introRawJson)
-                    .path("response")
-                    .path("body");
-
-            JsonNode imageBody = objectMapper.readTree(imageRawJson)
-                    .path("response")
-                    .path("body");
-
-            JsonNode fallbackBody = objectMapper.readTree(fallbackListRawJson)
-                    .path("response")
-                    .path("body");
-
-            JsonNode commonItem = extractFirstItem(commonBody);
-            JsonNode introItem = extractFirstItem(introBody);
-            JsonNode fallbackItem = extractItemByContentId(fallbackBody, contentId);
-
-            JsonNode baseItem = hasText(getText(commonItem, "title"))
-                    ? commonItem
-                    : fallbackItem;
-
-            String title = getText(baseItem, "title");
-            String address = buildAddress(
-                    getText(baseItem, "addr1"),
-                    getText(baseItem, "addr2")
+            String resolvedContentId = firstNonBlank(
+                    text(commonItem, "contentid"),
+                    text(introItem, "contentid"),
+                    text(fallbackItem, "contentid"),
+                    contentId
             );
 
+            String contentTypeId = firstNonBlank(
+                    text(commonItem, "contenttypeid"),
+                    text(introItem, "contenttypeid"),
+                    text(fallbackItem, "contenttypeid"),
+                    DEFAULT_FESTIVAL_CONTENT_TYPE_ID
+            );
+
+            String cat1 = firstNonBlank(
+                    text(commonItem, "cat1"),
+                    text(fallbackItem, "cat1")
+            );
+
+            String cat2 = firstNonBlank(
+                    text(commonItem, "cat2"),
+                    text(fallbackItem, "cat2")
+            );
+
+            String cat3 = firstNonBlank(
+                    text(commonItem, "cat3"),
+                    text(fallbackItem, "cat3")
+            );
+
+            String title = firstNonBlank(
+                    text(commonItem, "title"),
+                    text(fallbackItem, "title")
+            );
+
+            String address = combineAddress(
+                    firstNonBlank(text(commonItem, "addr1"), text(fallbackItem, "addr1")),
+                    firstNonBlank(text(commonItem, "addr2"), text(fallbackItem, "addr2"))
+            );
+
+            String region = extractRegion(address);
+
             String startDate = firstNonBlank(
-                    getText(introItem, "eventstartdate"),
-                    getText(baseItem, "eventstartdate")
+                    text(introItem, "eventstartdate"),
+                    text(fallbackItem, "eventstartdate")
             );
 
             String endDate = firstNonBlank(
-                    getText(introItem, "eventenddate"),
-                    getText(baseItem, "eventenddate")
+                    text(introItem, "eventenddate"),
+                    text(fallbackItem, "eventenddate")
             );
 
-            List<String> imageUrls = extractImageUrls(baseItem, imageBody);
-            String imageUrl = imageUrls.isEmpty()
-                    ? resolveImageUrl(baseItem)
-                    : imageUrls.get(0);
+            String category = resolveCategory(contentTypeId, cat2, cat3, title);
+            String themeCategory = resolveThemeCategory(contentTypeId, cat2, cat3, title, address);
+
+            String eventPlace = firstNonBlank(
+                    cleanHtml(text(introItem, "eventplace")),
+                    address
+            );
+
+            String playTime = cleanHtml(text(introItem, "playtime"));
+
+            String useTimeFestival = firstNonBlank(
+                    cleanHtml(text(introItem, "usetimefestival")),
+                    cleanHtml(text(introItem, "discountinfofestival")),
+                    cleanHtml(text(introItem, "usefee")),
+                    cleanHtml(text(introItem, "usefeeleports"))
+            );
+
+            String sponsor = combineSponsor(
+                    cleanHtml(text(introItem, "sponsor1")),
+                    cleanHtml(text(introItem, "sponsor2"))
+            );
+
+            String imageUrl = firstNonBlank(
+                    text(commonItem, "firstimage"),
+                    text(fallbackItem, "firstimage"),
+                    text(commonItem, "firstimage2"),
+                    text(fallbackItem, "firstimage2")
+            );
+
+            List<String> imageUrls = extractImageUrls(detailImageRawJson, imageUrl);
+
+            String overview = cleanHtml(text(commonItem, "overview"));
+
+            DescriptionInfo descriptionInfo = buildDescription(
+                    overview,
+                    title,
+                    region,
+                    category,
+                    themeCategory
+            );
+
+            DisplayInfo displayInfo = resolveDisplayInfo(
+                    contentTypeId,
+                    category,
+                    themeCategory,
+                    startDate,
+                    endDate,
+                    playTime,
+                    eventPlace,
+                    introItem
+            );
+
+            List<ContentInfoResponse> mainInfo = buildDetailMainInfo(
+                    contentTypeId,
+                    category,
+                    themeCategory,
+                    startDate,
+                    endDate,
+                    playTime,
+                    eventPlace,
+                    useTimeFestival,
+                    sponsor,
+                    introItem
+            );
 
             return FestivalDetailResponse.builder()
-                    .id(firstNonBlank(
-                            getText(baseItem, "contentid"),
-                            getText(introItem, "contentid"),
-                            contentId
-                    ))
+                    .id(resolvedContentId)
+                    .contentTypeId(contentTypeId)
+                    .cat1(cat1)
+                    .cat2(cat2)
+                    .cat3(cat3)
                     .title(title)
-                    .region(extractRegion(address))
-                    .category(resolveFestivalCategory(title, address))
-                    .status(resolveStatus(startDate, endDate))
+                    .region(region)
+                    .category(category)
+                    .themeCategory(themeCategory)
+                    .status(calculateStatus(startDate, endDate))
                     .startDate(startDate)
                     .endDate(endDate)
                     .address(address)
                     .imageUrl(imageUrl)
                     .imageUrls(imageUrls)
-                    .tel(getText(baseItem, "tel"))
-                    .homepage(extractHomepageUrl(getText(commonItem, "homepage")))
-                    .overview(cleanHtml(getText(commonItem, "overview")))
-                    .mapX(getText(baseItem, "mapx"))
-                    .mapY(getText(baseItem, "mapy"))
-                    .eventPlace(getText(introItem, "eventplace"))
-                    .playTime(cleanHtml(getText(introItem, "playtime")))
-                    .useTimeFestival(cleanHtml(getText(introItem, "usetimefestival")))
-                    .sponsor(resolveSponsor(introItem))
+                    .tel(firstNonBlank(text(commonItem, "tel"), text(fallbackItem, "tel")))
+                    .homepage(cleanHtml(firstNonBlank(
+                            text(commonItem, "homepage"),
+                            text(introItem, "eventhomepage")
+                    )))
+                    .overview(overview)
+                    .description(descriptionInfo.description())
+                    .descriptionSource(descriptionInfo.source())
+                    .mapX(firstNonBlank(text(commonItem, "mapx"), text(fallbackItem, "mapx")))
+                    .mapY(firstNonBlank(text(commonItem, "mapy"), text(fallbackItem, "mapy")))
+                    .eventPlace(eventPlace)
+                    .playTime(playTime)
+                    .useTimeFestival(useTimeFestival)
+                    .sponsor(sponsor)
+                    .timeLabel(displayInfo.timeLabel())
+                    .timeValue(displayInfo.timeValue())
+                    .extraLabel(displayInfo.extraLabel())
+                    .extraValue(displayInfo.extraValue())
+                    .mainInfo(mainInfo)
                     .build();
-
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("TourAPI 상세 응답 파싱에 실패했습니다.", e);
+        } catch (Exception e) {
+            return FestivalDetailResponse.builder()
+                    .id(contentId)
+                    .contentTypeId(DEFAULT_FESTIVAL_CONTENT_TYPE_ID)
+                    .cat1("")
+                    .cat2("")
+                    .cat3("")
+                    .title("")
+                    .region("")
+                    .category("행사")
+                    .themeCategory("기타")
+                    .status("")
+                    .startDate("")
+                    .endDate("")
+                    .address("")
+                    .imageUrl("")
+                    .imageUrls(List.of())
+                    .tel("")
+                    .homepage("")
+                    .overview("")
+                    .description("제공된 상세 설명이 없습니다.")
+                    .descriptionSource("EMPTY")
+                    .mapX("")
+                    .mapY("")
+                    .eventPlace("")
+                    .playTime("")
+                    .useTimeFestival("")
+                    .sponsor("")
+                    .timeLabel("행사 시간")
+                    .timeValue("정보 없음")
+                    .extraLabel("행사 장소")
+                    .extraValue("정보 없음")
+                    .mainInfo(List.of())
+                    .build();
         }
     }
 
-    private List<FestivalSummaryResponse> extractFestivalItems(JsonNode body) {
-        List<FestivalSummaryResponse> result = new ArrayList<>();
+    public ExperienceListResponse toExperienceListResponse(String rawJson, int page, int size) {
+        try {
+            JsonNode body = getBody(rawJson);
+            JsonNode itemNode = body.path("items").path("item");
 
-        JsonNode itemNode = body.path("items").path("item");
+            List<ExperienceSummaryResponse> items = toItemNodeList(itemNode).stream()
+                    .map(this::toExperienceSummaryResponse)
+                    .filter(item -> SupportedContentType.isExperienceSupported(item.getContentTypeId()))
+                    .toList();
 
-        if (itemNode.isMissingNode() || itemNode.isNull()) {
-            return result;
+            return ExperienceListResponse.builder()
+                    .items(items)
+                    .page(page)
+                    .size(size)
+                    .totalCount(items.size())
+                    .build();
+        } catch (Exception e) {
+            return ExperienceListResponse.builder()
+                    .items(List.of())
+                    .page(page)
+                    .size(size)
+                    .totalCount(0)
+                    .build();
         }
-
-        if (itemNode.isArray()) {
-            for (JsonNode item : itemNode) {
-                result.add(toFestivalSummaryResponse(item));
-            }
-            return result;
-        }
-
-        if (itemNode.isObject()) {
-            result.add(toFestivalSummaryResponse(itemNode));
-        }
-
-        return result;
     }
 
-    private List<ExperienceSummaryResponse> extractExperienceItems(JsonNode body) {
-        List<ExperienceSummaryResponse> result = new ArrayList<>();
-
-        JsonNode itemNode = body.path("items").path("item");
-
-        if (itemNode.isMissingNode() || itemNode.isNull()) {
-            return result;
-        }
-
-        if (itemNode.isArray()) {
-            for (JsonNode item : itemNode) {
-                result.add(toExperienceSummaryResponse(item));
-            }
-            return result;
-        }
-
-        if (itemNode.isObject()) {
-            result.add(toExperienceSummaryResponse(itemNode));
-        }
-
-        return result;
+    public String extractContentTypeId(String rawJson) {
+        JsonNode item = firstItem(rawJson);
+        return text(item, "contenttypeid");
     }
 
-    private JsonNode extractFirstItem(JsonNode body) {
-        JsonNode itemNode = body.path("items").path("item");
-
-        if (itemNode.isArray() && itemNode.size() > 0) {
-            return itemNode.get(0);
-        }
-
-        if (itemNode.isObject()) {
-            return itemNode;
-        }
-
-        return objectMapper.createObjectNode();
-    }
-
-    private JsonNode extractItemByContentId(
-            JsonNode body,
-            String contentId
-    ) {
-        JsonNode itemNode = body.path("items").path("item");
-
-        if (itemNode.isArray()) {
-            for (JsonNode item : itemNode) {
-                if (contentId.equals(getText(item, "contentid"))) {
-                    return item;
-                }
-            }
-        }
-
-        if (itemNode.isObject() && contentId.equals(getText(itemNode, "contentid"))) {
-            return itemNode;
-        }
-
-        return objectMapper.createObjectNode();
+    public String extractContentTypeIdFromFallback(String rawJson, String contentId) {
+        JsonNode item = findItemByContentId(rawJson, contentId);
+        return text(item, "contenttypeid");
     }
 
     private FestivalSummaryResponse toFestivalSummaryResponse(JsonNode item) {
-        String title = getText(item, "title");
-        String address = buildAddress(
-                getText(item, "addr1"),
-                getText(item, "addr2")
+        String contentTypeId = firstNonBlank(
+                text(item, "contenttypeid"),
+                DEFAULT_FESTIVAL_CONTENT_TYPE_ID
         );
-        String startDate = getText(item, "eventstartdate");
-        String endDate = getText(item, "eventenddate");
+
+        String cat1 = text(item, "cat1");
+        String cat2 = text(item, "cat2");
+        String cat3 = text(item, "cat3");
+
+        String title = text(item, "title");
+        String address = combineAddress(text(item, "addr1"), text(item, "addr2"));
+
+        String startDate = text(item, "eventstartdate");
+        String endDate = text(item, "eventenddate");
+
+        String category = resolveCategory(contentTypeId, cat2, cat3, title);
+        String themeCategory = resolveThemeCategory(contentTypeId, cat2, cat3, title, address);
+
+        DisplayInfo displayInfo = resolveDisplayInfo(
+                contentTypeId,
+                category,
+                themeCategory,
+                startDate,
+                endDate,
+                "",
+                "",
+                objectMapper.createObjectNode()
+        );
 
         return FestivalSummaryResponse.builder()
-                .id(getText(item, "contentid"))
+                .id(text(item, "contentid"))
+                .contentTypeId(contentTypeId)
+                .cat1(cat1)
+                .cat2(cat2)
+                .cat3(cat3)
                 .title(title)
                 .region(extractRegion(address))
-                .category(resolveFestivalCategory(title, address))
-                .status(resolveStatus(startDate, endDate))
+                .category(category)
+                .themeCategory(themeCategory)
+                .status(calculateStatus(startDate, endDate))
                 .startDate(startDate)
                 .endDate(endDate)
                 .address(address)
-                .imageUrl(resolveImageUrl(item))
-                .tel(getText(item, "tel"))
-                .mapX(getText(item, "mapx"))
-                .mapY(getText(item, "mapy"))
+                .imageUrl(firstNonBlank(text(item, "firstimage"), text(item, "firstimage2")))
+                .tel(text(item, "tel"))
+                .mapX(text(item, "mapx"))
+                .mapY(text(item, "mapy"))
+                .timeLabel(displayInfo.timeLabel())
+                .timeValue(displayInfo.timeValue())
+                .extraLabel(displayInfo.extraLabel())
+                .extraValue(displayInfo.extraValue())
                 .build();
     }
 
     private ExperienceSummaryResponse toExperienceSummaryResponse(JsonNode item) {
-        String title = getText(item, "title");
-        String address = buildAddress(
-                getText(item, "addr1"),
-                getText(item, "addr2")
+        String contentTypeId = text(item, "contenttypeid");
+
+        String cat1 = text(item, "cat1");
+        String cat2 = text(item, "cat2");
+        String cat3 = text(item, "cat3");
+
+        String title = text(item, "title");
+        String address = combineAddress(text(item, "addr1"), text(item, "addr2"));
+
+        String category = resolveCategory(contentTypeId, cat2, cat3, title);
+        String themeCategory = resolveThemeCategory(contentTypeId, cat2, cat3, title, address);
+
+        DisplayInfo displayInfo = resolveDisplayInfo(
+                contentTypeId,
+                category,
+                themeCategory,
+                "",
+                "",
+                "",
+                "",
+                objectMapper.createObjectNode()
         );
-        String contentTypeId = getText(item, "contenttypeid");
 
         return ExperienceSummaryResponse.builder()
-                .id(getText(item, "contentid"))
+                .id(text(item, "contentid"))
+                .contentTypeId(contentTypeId)
+                .cat1(cat1)
+                .cat2(cat2)
+                .cat3(cat3)
                 .title(title)
                 .region(extractRegion(address))
-                .category(resolveExperienceCategory(contentTypeId))
+                .category(category)
+                .themeCategory(themeCategory)
                 .address(address)
-                .imageUrl(resolveImageUrl(item))
-                .tel(getText(item, "tel"))
-                .mapX(getText(item, "mapx"))
-                .mapY(getText(item, "mapy"))
-                .contentTypeId(contentTypeId)
+                .imageUrl(firstNonBlank(text(item, "firstimage"), text(item, "firstimage2")))
+                .tel(text(item, "tel"))
+                .mapX(text(item, "mapx"))
+                .mapY(text(item, "mapy"))
+                .timeLabel(displayInfo.timeLabel())
+                .timeValue(displayInfo.timeValue())
+                .extraLabel(displayInfo.extraLabel())
+                .extraValue(displayInfo.extraValue())
                 .build();
     }
 
-    private String getText(JsonNode item, String fieldName) {
-        return item.path(fieldName).asText("");
-    }
-
-    private String buildAddress(String addr1, String addr2) {
-        if (addr1.isBlank()) {
-            return "";
+    private String resolveCategory(String contentTypeId, String cat2, String cat3, String title) {
+        if ("15".equals(contentTypeId)) {
+            return resolveEventCategory(cat2, cat3, title);
         }
 
-        if (addr2.isBlank()) {
-            return addr1;
-        }
-
-        return addr1 + " " + addr2;
+        return SupportedContentType.resolveDefaultCategory(contentTypeId);
     }
 
-    private String resolveImageUrl(JsonNode item) {
-        String firstImage = getText(item, "firstimage");
+    private String resolveEventCategory(String cat2, String cat3, String title) {
+        String merged = normalizeForSearch(cat2 + " " + cat3 + " " + title);
 
-        if (!firstImage.isBlank()) {
-            return firstImage;
+        if (containsAny(merged, "a0207", "축제", "페스티벌", "문화제", "제전")) {
+            return "축제";
         }
 
-        return getText(item, "firstimage2");
+        if (containsAny(
+                merged,
+                "a02080100",
+                "a02080200",
+                "a02080300",
+                "a02080400",
+                "a02080800",
+                "a02080900",
+                "a02081000",
+                "전통공연",
+                "연극",
+                "뮤지컬",
+                "오페라",
+                "무용",
+                "클래식",
+                "콘서트",
+                "공연"
+        )) {
+            return "공연";
+        }
+
+        return "행사";
     }
 
-    private List<String> extractImageUrls(
-            JsonNode baseItem,
-            JsonNode imageBody
+    private String resolveThemeCategory(
+            String contentTypeId,
+            String cat2,
+            String cat3,
+            String title,
+            String address
     ) {
+        String merged = normalizeForSearch(cat2 + " " + cat3 + " " + title + " " + address);
+
+        if ("12".equals(contentTypeId)) {
+            if (containsAny(merged, "산", "계곡", "폭포", "호수", "강", "자연", "숲", "휴양림", "수목원")) {
+                return "자연관광";
+            }
+
+            if (containsAny(merged, "사찰", "절", "문화재", "유적", "성곽", "향교")) {
+                return "역사문화";
+            }
+
+            return "관광지";
+        }
+
+        if ("14".equals(contentTypeId)) {
+            if (containsAny(merged, "박물관")) {
+                return "박물관";
+            }
+
+            if (containsAny(merged, "미술관")) {
+                return "미술관";
+            }
+
+            if (containsAny(merged, "전시", "전시관")) {
+                return "전시시설";
+            }
+
+            if (containsAny(merged, "공연장", "문화관", "문화센터")) {
+                return "문화공간";
+            }
+
+            return "문화시설";
+        }
+
+        if ("15".equals(contentTypeId)) {
+            if (containsAny(merged, "먹거리", "음식", "푸드", "와인", "대추", "시장", "야시장")) {
+                return "먹거리";
+            }
+
+            if (containsAny(merged, "야행", "야간", "밤", "불빛", "라이트")) {
+                return "야간행사";
+            }
+
+            if (containsAny(merged, "전통", "문화유산", "국가유산", "민속")) {
+                return "전통문화";
+            }
+
+            if (containsAny(merged, "전시회", "박람회", "컨벤션", "엑스포")) {
+                return "전시행사";
+            }
+
+            if (containsAny(merged, "공연", "콘서트", "음악", "연극", "뮤지컬")) {
+                return "공연";
+            }
+
+            if (containsAny(merged, "축제", "페스티벌", "문화제")) {
+                return "문화축제";
+            }
+
+            return "행사";
+        }
+
+        if ("28".equals(contentTypeId)) {
+            if (containsAny(merged, "캠핑", "야영장", "카라반", "글램핑")) {
+                return "캠핑";
+            }
+
+            if (containsAny(merged, "수상", "래프팅", "카약", "카누", "물놀이")) {
+                return "수상레포츠";
+            }
+
+            if (containsAny(merged, "산악", "등산", "클라이밍", "트레킹")) {
+                return "산악레포츠";
+            }
+
+            if (containsAny(merged, "자전거", "레일바이크", "바이크")) {
+                return "자전거";
+            }
+
+            return "레포츠";
+        }
+
+        return "기타";
+    }
+
+    private DisplayInfo resolveDisplayInfo(
+            String contentTypeId,
+            String category,
+            String themeCategory,
+            String startDate,
+            String endDate,
+            String playTime,
+            String eventPlace,
+            JsonNode introItem
+    ) {
+        if ("12".equals(contentTypeId)) {
+            return new DisplayInfo(
+                    "이용 시간",
+                    valueOrDefault(cleanHtml(text(introItem, "usetime")), "상세페이지에서 확인"),
+                    "관광 유형",
+                    valueOrDefault(themeCategory, "관광지")
+            );
+        }
+
+        if ("14".equals(contentTypeId)) {
+            return new DisplayInfo(
+                    "이용 시간",
+                    valueOrDefault(cleanHtml(text(introItem, "usetimeculture")), "상세페이지에서 확인"),
+                    "시설 유형",
+                    valueOrDefault(themeCategory, "문화시설")
+            );
+        }
+
+        if ("28".equals(contentTypeId)) {
+            return new DisplayInfo(
+                    "이용 시간",
+                    valueOrDefault(cleanHtml(text(introItem, "usetimeleports")), "상세페이지에서 확인"),
+                    "활동 유형",
+                    valueOrDefault(themeCategory, "레포츠")
+            );
+        }
+
+        return switch (category) {
+            case "공연" -> new DisplayInfo(
+                    "공연 시간",
+                    valueOrDefault(playTime, formatDateRange(startDate, endDate)),
+                    "공연 장소",
+                    valueOrDefault(eventPlace, "상세페이지에서 확인")
+            );
+            case "축제" -> new DisplayInfo(
+                    "축제 기간",
+                    formatDateRange(startDate, endDate),
+                    "축제 테마",
+                    valueOrDefault(themeCategory, "축제")
+            );
+            default -> new DisplayInfo(
+                    "행사 시간",
+                    valueOrDefault(playTime, formatDateRange(startDate, endDate)),
+                    "행사 장소",
+                    valueOrDefault(eventPlace, "상세페이지에서 확인")
+            );
+        };
+    }
+
+    private List<ContentInfoResponse> buildDetailMainInfo(
+            String contentTypeId,
+            String category,
+            String themeCategory,
+            String startDate,
+            String endDate,
+            String playTime,
+            String eventPlace,
+            String useTimeFestival,
+            String sponsor,
+            JsonNode introItem
+    ) {
+        if ("12".equals(contentTypeId)) {
+            return buildTouristMainInfo(introItem, themeCategory);
+        }
+
+        if ("14".equals(contentTypeId)) {
+            return buildCultureMainInfo(introItem, themeCategory);
+        }
+
+        if ("28".equals(contentTypeId)) {
+            return buildLeportsMainInfo(introItem, themeCategory);
+        }
+
+        return buildEventMainInfo(
+                category,
+                themeCategory,
+                startDate,
+                endDate,
+                playTime,
+                eventPlace,
+                useTimeFestival,
+                sponsor,
+                introItem
+        );
+    }
+
+    private List<ContentInfoResponse> buildEventMainInfo(
+            String category,
+            String themeCategory,
+            String startDate,
+            String endDate,
+            String playTime,
+            String eventPlace,
+            String useTimeFestival,
+            String sponsor,
+            JsonNode introItem
+    ) {
+        List<ContentInfoResponse> mainInfo = new ArrayList<>();
+
+        if ("공연".equals(category)) {
+            addInfo(mainInfo, "공연 일시", formatDateRange(startDate, endDate));
+            addInfo(mainInfo, "공연 시간", playTime);
+            addInfo(mainInfo, "공연 장소", eventPlace);
+            addInfo(mainInfo, "공연 유형", themeCategory);
+            addInfo(mainInfo, "이용 요금", useTimeFestival);
+            addInfo(mainInfo, "주최/주관", sponsor);
+            addInfo(mainInfo, "프로그램", cleanHtml(text(introItem, "program")));
+            return mainInfo;
+        }
+
+        if ("축제".equals(category)) {
+            addInfo(mainInfo, "축제 기간", formatDateRange(startDate, endDate));
+            addInfo(mainInfo, "축제 시간", playTime);
+            addInfo(mainInfo, "축제 장소", eventPlace);
+            addInfo(mainInfo, "축제 테마", themeCategory);
+            addInfo(mainInfo, "이용 요금", useTimeFestival);
+            addInfo(mainInfo, "주최/주관", sponsor);
+            addInfo(mainInfo, "부대 행사", cleanHtml(text(introItem, "subevent")));
+            return mainInfo;
+        }
+
+        addInfo(mainInfo, "행사 기간", formatDateRange(startDate, endDate));
+        addInfo(mainInfo, "행사 시간", playTime);
+        addInfo(mainInfo, "행사 장소", eventPlace);
+        addInfo(mainInfo, "행사 유형", themeCategory);
+        addInfo(mainInfo, "이용 요금", useTimeFestival);
+        addInfo(mainInfo, "주최/주관", sponsor);
+        addInfo(mainInfo, "프로그램", cleanHtml(text(introItem, "program")));
+
+        return mainInfo;
+    }
+
+    private List<ContentInfoResponse> buildTouristMainInfo(JsonNode introItem, String themeCategory) {
+        List<ContentInfoResponse> mainInfo = new ArrayList<>();
+
+        addInfo(mainInfo, "관광 유형", themeCategory);
+        addInfo(mainInfo, "이용 시간", cleanHtml(text(introItem, "usetime")));
+        addInfo(mainInfo, "쉬는 날", cleanHtml(text(introItem, "restdate")));
+        addInfo(mainInfo, "문의처", cleanHtml(text(introItem, "infocenter")));
+        addInfo(mainInfo, "주차", cleanHtml(text(introItem, "parking")));
+        addInfo(mainInfo, "소요 시간", cleanHtml(text(introItem, "taketime")));
+        addInfo(mainInfo, "체험 안내", cleanHtml(text(introItem, "expguide")));
+
+        return mainInfo;
+    }
+
+    private List<ContentInfoResponse> buildCultureMainInfo(JsonNode introItem, String themeCategory) {
+        List<ContentInfoResponse> mainInfo = new ArrayList<>();
+
+        addInfo(mainInfo, "시설 유형", themeCategory);
+        addInfo(mainInfo, "이용 시간", cleanHtml(text(introItem, "usetimeculture")));
+        addInfo(mainInfo, "쉬는 날", cleanHtml(text(introItem, "restdateculture")));
+        addInfo(mainInfo, "문의처", cleanHtml(text(introItem, "infocenterculture")));
+        addInfo(mainInfo, "이용 요금", cleanHtml(text(introItem, "usefee")));
+        addInfo(mainInfo, "주차", cleanHtml(text(introItem, "parkingculture")));
+        addInfo(mainInfo, "규모", cleanHtml(text(introItem, "scale")));
+
+        return mainInfo;
+    }
+
+    private List<ContentInfoResponse> buildLeportsMainInfo(JsonNode introItem, String themeCategory) {
+        List<ContentInfoResponse> mainInfo = new ArrayList<>();
+
+        addInfo(mainInfo, "활동 유형", themeCategory);
+        addInfo(mainInfo, "개장 기간", cleanHtml(text(introItem, "openperiod")));
+        addInfo(mainInfo, "이용 시간", cleanHtml(text(introItem, "usetimeleports")));
+        addInfo(mainInfo, "쉬는 날", cleanHtml(text(introItem, "restdateleports")));
+        addInfo(mainInfo, "문의처", cleanHtml(text(introItem, "infocenterleports")));
+        addInfo(mainInfo, "이용 요금", cleanHtml(text(introItem, "usefeeleports")));
+        addInfo(mainInfo, "주차", cleanHtml(text(introItem, "parkingleports")));
+
+        return mainInfo;
+    }
+
+    private void addInfo(List<ContentInfoResponse> mainInfo, String label, String value) {
+        mainInfo.add(ContentInfoResponse.builder()
+                .label(label)
+                .value(valueOrDefault(value, "정보 없음"))
+                .build());
+    }
+
+    private DescriptionInfo buildDescription(
+            String overview,
+            String title,
+            String region,
+            String category,
+            String themeCategory
+    ) {
+        if (hasText(overview)) {
+            return new DescriptionInfo(overview, "DETAIL_COMMON_OVERVIEW");
+        }
+
+        return new DescriptionInfo(
+                buildFallbackDescription(title, region, category, themeCategory),
+                "GENERATED_FROM_CATEGORY"
+        );
+    }
+
+    private String buildFallbackDescription(
+            String title,
+            String region,
+            String category,
+            String themeCategory
+    ) {
+        if (!hasText(title)) {
+            return "제공된 상세 설명이 없습니다.";
+        }
+
+        String resolvedRegion = valueOrDefault(region, "충북");
+        String resolvedCategory = valueOrDefault(category, "관광 콘텐츠");
+        String resolvedThemeCategory = valueOrDefault(themeCategory, resolvedCategory);
+
+        return title + "은(는) " + resolvedRegion + "에서 만날 수 있는 "
+                + resolvedThemeCategory + " 성격의 " + resolvedCategory
+                + "입니다. 운영 시간, 위치, 이용 정보 등을 확인하고 방문 계획을 세울 수 있습니다.";
+    }
+
+    private JsonNode getBody(String rawJson) throws Exception {
+        JsonNode root = objectMapper.readTree(rawJson);
+
+        JsonNode responseBody = root.path("response").path("body");
+        if (!responseBody.isMissingNode() && !responseBody.isNull() && !responseBody.isEmpty()) {
+            return responseBody;
+        }
+
+        JsonNode directBody = root.path("body");
+        if (!directBody.isMissingNode() && !directBody.isNull()) {
+            return directBody;
+        }
+
+        return objectMapper.createObjectNode();
+    }
+
+    private JsonNode firstItem(String rawJson) {
+        try {
+            JsonNode body = getBody(rawJson);
+            List<JsonNode> items = toItemNodeList(body.path("items").path("item"));
+
+            if (items.isEmpty()) {
+                return objectMapper.createObjectNode();
+            }
+
+            return items.get(0);
+        } catch (Exception e) {
+            return objectMapper.createObjectNode();
+        }
+    }
+
+    private JsonNode findItemByContentId(String rawJson, String contentId) {
+        try {
+            JsonNode body = getBody(rawJson);
+            List<JsonNode> items = toItemNodeList(body.path("items").path("item"));
+
+            for (JsonNode item : items) {
+                if (contentId != null && contentId.equals(text(item, "contentid"))) {
+                    return item;
+                }
+            }
+
+            return objectMapper.createObjectNode();
+        } catch (Exception e) {
+            return objectMapper.createObjectNode();
+        }
+    }
+
+    private List<JsonNode> toItemNodeList(JsonNode itemNode) {
+        List<JsonNode> items = new ArrayList<>();
+
+        if (itemNode == null || itemNode.isMissingNode() || itemNode.isNull()) {
+            return items;
+        }
+
+        if (itemNode.isArray()) {
+            itemNode.forEach(items::add);
+            return items;
+        }
+
+        if (itemNode.isObject()) {
+            items.add(itemNode);
+        }
+
+        return items;
+    }
+
+    private List<String> extractImageUrls(String detailImageRawJson, String imageUrl) {
         Set<String> imageUrlSet = new LinkedHashSet<>();
 
-        String firstImage = resolveImageUrl(baseItem);
-        if (!firstImage.isBlank()) {
-            imageUrlSet.add(firstImage);
+        if (hasText(imageUrl)) {
+            imageUrlSet.add(imageUrl);
         }
 
-        JsonNode imageItemNode = imageBody.path("items").path("item");
+        try {
+            JsonNode body = getBody(detailImageRawJson);
+            List<JsonNode> items = toItemNodeList(body.path("items").path("item"));
 
-        if (imageItemNode.isArray()) {
-            for (JsonNode imageItem : imageItemNode) {
-                addImageUrl(imageUrlSet, imageItem);
+            for (JsonNode item : items) {
+                String originImageUrl = text(item, "originimgurl");
+                String smallImageUrl = text(item, "smallimageurl");
+
+                if (hasText(originImageUrl)) {
+                    imageUrlSet.add(originImageUrl);
+                }
+
+                if (hasText(smallImageUrl)) {
+                    imageUrlSet.add(smallImageUrl);
+                }
             }
-        }
-
-        if (imageItemNode.isObject()) {
-            addImageUrl(imageUrlSet, imageItemNode);
+        } catch (Exception ignored) {
         }
 
         return new ArrayList<>(imageUrlSet);
     }
 
-    private void addImageUrl(
-            Set<String> imageUrlSet,
-            JsonNode imageItem
-    ) {
-        String originImageUrl = getText(imageItem, "originimgurl");
-        String smallImageUrl = getText(imageItem, "smallimageurl");
+    private String combineAddress(String addr1, String addr2) {
+        String first = safe(addr1);
+        String second = safe(addr2);
 
-        if (!originImageUrl.isBlank()) {
-            imageUrlSet.add(originImageUrl);
-            return;
+        if (!hasText(first)) {
+            return second;
         }
 
-        if (!smallImageUrl.isBlank()) {
-            imageUrlSet.add(smallImageUrl);
+        if (!hasText(second)) {
+            return first;
         }
+
+        return first + " " + second;
+    }
+
+    private String combineSponsor(String sponsor1, String sponsor2) {
+        String first = safe(sponsor1);
+        String second = safe(sponsor2);
+
+        if (!hasText(first)) {
+            return second;
+        }
+
+        if (!hasText(second)) {
+            return first;
+        }
+
+        if (first.equals(second)) {
+            return first;
+        }
+
+        return first + " / " + second;
     }
 
     private String extractRegion(String address) {
-        if (address.contains("청주")) return "청주";
-        if (address.contains("충주")) return "충주";
-        if (address.contains("제천")) return "제천";
-        if (address.contains("단양")) return "단양";
-        if (address.contains("보은")) return "보은";
-        if (address.contains("영동")) return "영동";
-        if (address.contains("옥천")) return "옥천";
-        if (address.contains("괴산")) return "괴산";
-        if (address.contains("진천")) return "진천";
-        if (address.contains("음성")) return "음성";
-        if (address.contains("증평")) return "증평";
+        String value = safe(address);
+
+        if (value.contains("청주")) {
+            return "청주";
+        }
+
+        if (value.contains("충주")) {
+            return "충주";
+        }
+
+        if (value.contains("제천")) {
+            return "제천";
+        }
+
+        if (value.contains("단양")) {
+            return "단양";
+        }
+
+        if (value.contains("보은")) {
+            return "보은";
+        }
+
+        if (value.contains("영동")) {
+            return "영동";
+        }
+
+        if (value.contains("옥천")) {
+            return "옥천";
+        }
+
+        if (value.contains("괴산")) {
+            return "괴산";
+        }
+
+        if (value.contains("진천")) {
+            return "진천";
+        }
+
+        if (value.contains("음성")) {
+            return "음성";
+        }
+
+        if (value.contains("증평")) {
+            return "증평";
+        }
 
         return "충북";
     }
 
-    private String resolveFestivalCategory(String title, String address) {
-        String text = title + " " + address;
-
-        if (containsAny(text, "와인", "대추", "음식", "먹거리", "푸드", "시장")) {
-            return "먹거리";
-        }
-
-        if (containsAny(text, "야행", "야시장", "밤", "라이트", "불빛")) {
-            return "야간행사";
-        }
-
-        if (containsAny(text, "체험", "농촌", "자연", "숲", "생태")) {
-            return "자연체험";
-        }
-
-        if (containsAny(text, "레포츠", "스포츠", "패러글라이딩", "액티비티")) {
-            return "액티비티";
-        }
-
-        if (containsAny(text, "전통시장", "시장")) {
-            return "전통시장";
-        }
-
-        return "문화축제";
-    }
-
-    private String resolveExperienceCategory(String contentTypeId) {
-        if (contentTypeId.equals("12")) {
-            return "관광지";
-        }
-
-        if (contentTypeId.equals("14")) {
-            return "문화시설";
-        }
-
-        if (contentTypeId.equals("25")) {
-            return "여행코스";
-        }
-
-        if (contentTypeId.equals("28")) {
-            return "레포츠";
-        }
-
-        return "체험/관광";
-    }
-
-    private boolean containsAny(String text, String... keywords) {
-        for (String keyword : keywords) {
-            if (text.contains(keyword)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private String resolveStatus(String startDate, String endDate) {
-        if (startDate.isBlank() || endDate.isBlank()) {
-            return "정보 없음";
+    private String calculateStatus(String startDate, String endDate) {
+        if (!isValidDate(startDate) || !isValidDate(endDate)) {
+            return "";
         }
 
         try {
@@ -446,67 +941,143 @@ public class FestivalMapper {
                 return "예정";
             }
 
-            if (!today.isBefore(start) && !today.isAfter(end)) {
-                return "진행 중";
+            if (today.isAfter(end)) {
+                return "종료";
             }
 
-            return "종료";
-
-        } catch (DateTimeParseException e) {
-            return "정보 없음";
+            return "진행중";
+        } catch (Exception e) {
+            return "";
         }
     }
 
-    private String extractHomepageUrl(String homepage) {
-        if (homepage == null || homepage.isBlank()) {
+    private String formatDateRange(String startDate, String endDate) {
+        String start = formatDate(startDate);
+        String end = formatDate(endDate);
+
+        if (!hasText(start) && !hasText(end)) {
+            return "정보 없음";
+        }
+
+        if (start.equals(end)) {
+            return start;
+        }
+
+        if (!hasText(start)) {
+            return end;
+        }
+
+        if (!hasText(end)) {
+            return start;
+        }
+
+        return start + " ~ " + end;
+    }
+
+    private String formatDate(String value) {
+        if (!isValidDate(value)) {
             return "";
         }
 
-        Matcher matcher = HREF_PATTERN.matcher(homepage);
+        return value.substring(0, 4) + "."
+                + value.substring(4, 6) + "."
+                + value.substring(6, 8);
+    }
 
-        if (matcher.find()) {
-            return matcher.group(1);
+    private boolean isValidDate(String value) {
+        return value != null && value.matches("\\d{8}");
+    }
+
+    private String text(JsonNode node, String fieldName) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return "";
         }
 
-        return cleanHtml(homepage);
+        JsonNode value = node.path(fieldName);
+
+        if (value.isMissingNode() || value.isNull()) {
+            return "";
+        }
+
+        return safe(value.asText());
     }
 
     private String cleanHtml(String value) {
-        if (value == null || value.isBlank()) {
+        if (!hasText(value)) {
             return "";
         }
 
         return value
-                .replaceAll("<[^>]*>", " ")
+                .replaceAll("(?i)<br\\s*/?>", "\n")
+                .replaceAll("<[^>]*>", "")
                 .replace("&nbsp;", " ")
                 .replace("&amp;", "&")
                 .replace("&lt;", "<")
                 .replace("&gt;", ">")
-                .replaceAll("\\s+", " ")
                 .trim();
     }
 
-    private String resolveSponsor(JsonNode introItem) {
-        String sponsor1 = getText(introItem, "sponsor1");
-
-        if (!sponsor1.isBlank()) {
-            return sponsor1;
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return "";
         }
 
-        return getText(introItem, "sponsor2");
-    }
-
-    private String firstNonBlank(String... values) {
         for (String value : values) {
-            if (value != null && !value.isBlank()) {
-                return value;
+            if (hasText(value)) {
+                return value.trim();
             }
         }
 
         return "";
     }
 
+    private boolean containsAny(String value, String... keywords) {
+        if (!hasText(value) || keywords == null) {
+            return false;
+        }
+
+        for (String keyword : keywords) {
+            if (hasText(keyword) && value.contains(keyword.toLowerCase())) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private String normalizeForSearch(String value) {
+        return safe(value)
+                .replace(" ", "")
+                .toLowerCase();
+    }
+
+    private String valueOrDefault(String value, String defaultValue) {
+        if (hasText(value)) {
+            return value;
+        }
+
+        return defaultValue;
+    }
+
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private String safe(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private record DisplayInfo(
+            String timeLabel,
+            String timeValue,
+            String extraLabel,
+            String extraValue
+    ) {
+    }
+
+    private record DescriptionInfo(
+            String description,
+            String source
+    ) {
     }
 }
