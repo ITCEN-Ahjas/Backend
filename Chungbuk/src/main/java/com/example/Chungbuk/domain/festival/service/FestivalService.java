@@ -1,6 +1,7 @@
 package com.example.Chungbuk.domain.festival.service;
 
 import com.example.Chungbuk.domain.festival.client.TourApiClient;
+import com.example.Chungbuk.domain.festival.constant.ChungbukRegion;
 import com.example.Chungbuk.domain.festival.constant.SupportedContentType;
 import com.example.Chungbuk.domain.festival.dto.response.ExperienceListResponse;
 import com.example.Chungbuk.domain.festival.dto.response.ExperienceSummaryResponse;
@@ -10,7 +11,9 @@ import com.example.Chungbuk.domain.festival.dto.response.FestivalSummaryResponse
 import com.example.Chungbuk.domain.festival.mapper.FestivalMapper;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -47,7 +50,16 @@ public class FestivalService {
                 sigunguCode
         );
 
-        FestivalListResponse response = festivalMapper.toFestivalListResponse(rawJson, validPage, validSize);
+        Map<String, String> detailIntroRawJsonMap = fetchDetailIntroRawJsonMap(
+                festivalMapper.extractIntroRequestTargets(rawJson, DEFAULT_FESTIVAL_CONTENT_TYPE_ID)
+        );
+
+        FestivalListResponse response = festivalMapper.toFestivalListResponse(
+                rawJson,
+                detailIntroRawJsonMap,
+                validPage,
+                validSize
+        );
 
         List<FestivalSummaryResponse> filteredItems = response.getItems().stream()
                 .filter(item -> matchesCategory(item.getCategory(), category))
@@ -129,7 +141,16 @@ public class FestivalService {
                 resolvedContentTypeId
         );
 
-        ExperienceListResponse response = festivalMapper.toExperienceListResponse(rawJson, validPage, validSize);
+        Map<String, String> detailIntroRawJsonMap = fetchDetailIntroRawJsonMap(
+                festivalMapper.extractIntroRequestTargets(rawJson, null)
+        );
+
+        ExperienceListResponse response = festivalMapper.toExperienceListResponse(
+                rawJson,
+                detailIntroRawJsonMap,
+                validPage,
+                validSize
+        );
 
         List<ExperienceSummaryResponse> filteredItems = response.getItems().stream()
                 .filter(item -> matchesCategory(item.getCategory(), category))
@@ -163,6 +184,34 @@ public class FestivalService {
         );
     }
 
+    private Map<String, String> fetchDetailIntroRawJsonMap(
+            List<FestivalMapper.IntroRequestTarget> targets
+    ) {
+        Map<String, String> detailIntroRawJsonMap = new LinkedHashMap<>();
+
+        for (FestivalMapper.IntroRequestTarget target : targets) {
+            String contentId = target.contentId();
+            String contentTypeId = target.contentTypeId();
+
+            if (!hasText(contentId) || !SupportedContentType.isSupported(contentTypeId)) {
+                continue;
+            }
+
+            try {
+                String detailIntroRawJson = tourApiClient.getFestivalDetailIntroRaw(
+                        contentId,
+                        contentTypeId
+                );
+
+                detailIntroRawJsonMap.put(contentId, detailIntroRawJson);
+            } catch (Exception ignored) {
+                detailIntroRawJsonMap.put(contentId, "");
+            }
+        }
+
+        return detailIntroRawJsonMap;
+    }
+
     private String resolveExperienceContentTypeId(String contentTypeId, String category) {
         String contentTypeResult = SupportedContentType.resolveExperienceContentTypeId(contentTypeId);
 
@@ -193,7 +242,8 @@ public class FestivalService {
                         + item.getRegion() + " "
                         + item.getCategory() + " "
                         + item.getThemeCategory() + " "
-                        + item.getAddress()
+                        + item.getAddress() + " "
+                        + item.getExtraValue()
         );
 
         return searchTarget.contains(normalizedKeyword);
@@ -211,7 +261,8 @@ public class FestivalService {
                         + item.getRegion() + " "
                         + item.getCategory() + " "
                         + item.getThemeCategory() + " "
-                        + item.getAddress()
+                        + item.getAddress() + " "
+                        + item.getExtraValue()
         );
 
         return searchTarget.contains(normalizedKeyword);
@@ -246,24 +297,7 @@ public class FestivalService {
     }
 
     private String resolveSigunguCode(String region) {
-        if (!hasText(region) || "전체".equals(region.trim()) || "충북".equals(region.trim())) {
-            return null;
-        }
-
-        return switch (region.trim()) {
-            case "괴산" -> "1";
-            case "단양" -> "2";
-            case "보은" -> "3";
-            case "영동" -> "4";
-            case "옥천" -> "5";
-            case "음성" -> "6";
-            case "제천" -> "7";
-            case "진천" -> "8";
-            case "청주" -> "10";
-            case "충주" -> "11";
-            case "증평" -> "12";
-            default -> null;
-        };
+        return ChungbukRegion.findSigunguCodeByName(region);
     }
 
     private String firstNonBlank(String... values) {
