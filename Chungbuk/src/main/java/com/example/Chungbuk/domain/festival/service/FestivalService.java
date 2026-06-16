@@ -9,12 +9,14 @@ import com.example.Chungbuk.domain.festival.dto.response.FestivalDetailResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalListResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalSummaryResponse;
 import com.example.Chungbuk.domain.festival.mapper.FestivalMapper;
+import com.example.Chungbuk.global.config.CacheConfig;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -30,6 +32,15 @@ public class FestivalService {
     private static final String DETAIL_FALLBACK_EVENT_START_DATE = "20230101";
     private static final DateTimeFormatter TOUR_API_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
+    @Cacheable(
+            value = CacheConfig.FESTIVAL_LIST_CACHE,
+            key = "'page=' + #page"
+                    + " + ':size=' + #size"
+                    + " + ':eventStartDate=' + (#eventStartDate == null ? '' : #eventStartDate)"
+                    + " + ':region=' + (#region == null ? '' : #region)"
+                    + " + ':category=' + (#category == null ? '' : #category)"
+                    + " + ':keyword=' + (#keyword == null ? '' : #keyword)"
+    )
     public FestivalListResponse getFestivals(
             int page,
             int size,
@@ -74,6 +85,10 @@ public class FestivalService {
                 .build();
     }
 
+    @Cacheable(
+            value = CacheConfig.FESTIVAL_DETAIL_CACHE,
+            key = "#contentId == null ? '' : #contentId"
+    )
     public FestivalDetailResponse getFestivalDetail(String contentId) {
         String validContentId = safe(contentId);
 
@@ -112,6 +127,15 @@ public class FestivalService {
         );
     }
 
+    @Cacheable(
+            value = CacheConfig.EXPERIENCE_LIST_CACHE,
+            key = "'page=' + #page"
+                    + " + ':size=' + #size"
+                    + " + ':region=' + (#region == null ? '' : #region)"
+                    + " + ':contentTypeId=' + (#contentTypeId == null ? '' : #contentTypeId)"
+                    + " + ':category=' + (#category == null ? '' : #category)"
+                    + " + ':keyword=' + (#keyword == null ? '' : #keyword)"
+    )
     public ExperienceListResponse getExperiences(
             int page,
             int size,
