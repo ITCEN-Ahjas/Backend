@@ -5,6 +5,8 @@ import com.example.Chungbuk.domain.accommodation.dto.response.AccommodationDetai
 import com.example.Chungbuk.domain.accommodation.dto.response.AccommodationListResponse;
 import com.example.Chungbuk.domain.accommodation.dto.response.AccommodationSummaryResponse;
 import com.example.Chungbuk.domain.accommodation.dto.response.RoomInfoResponse;
+import com.example.Chungbuk.domain.accommodation.entity.AccommodationEntity;
+import com.example.Chungbuk.domain.accommodation.entity.AccommodationRoomEntity;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
@@ -139,6 +141,103 @@ public class AccommodationMapper {
                     .rooms(List.of())
                     .build();
         }
+    }
+
+    public AccommodationEntity toEntity(AccommodationDetailResponse response) {
+        AccommodationEntity entity = AccommodationEntity.builder()
+                .id(response.getId())
+                .cat1(response.getCat1())
+                .cat2(response.getCat2())
+                .cat3(response.getCat3())
+                .title(response.getTitle())
+                .region(response.getRegion())
+                .category(response.getCategory())
+                .address(response.getAddress())
+                .imageUrl(response.getImageUrl())
+                .imageUrls(new ArrayList<>(response.getImageUrls() == null ? List.of() : response.getImageUrls()))
+                .tel(response.getTel())
+                .homepage(response.getHomepage())
+                .overview(response.getOverview())
+                .description(response.getDescription())
+                .descriptionSource(response.getDescriptionSource())
+                .mapX(response.getMapX())
+                .mapY(response.getMapY())
+                .checkInTime(response.getCheckInTime())
+                .checkOutTime(response.getCheckOutTime())
+                .parking(response.getParking())
+                .cookingAvailable(response.getCookingAvailable())
+                .roomCount(response.getRoomCount())
+                .infoCenter(response.getInfoCenter())
+                .build();
+
+        List<RoomInfoResponse> rooms = response.getRooms() == null ? List.of() : response.getRooms();
+
+        for (RoomInfoResponse room : rooms) {
+            entity.addRoom(AccommodationRoomEntity.builder()
+                    .roomTitle(room.getRoomTitle())
+                    .roomSize(room.getRoomSize())
+                    .roomCount(room.getRoomCount())
+                    .baseCount(room.getBaseCount())
+                    .maxCount(room.getMaxCount())
+                    .offSeasonMinFee(room.getOffSeasonMinFee())
+                    .offSeasonMaxFee(room.getOffSeasonMaxFee())
+                    .peakSeasonMinFee(room.getPeakSeasonMinFee())
+                    .peakSeasonMaxFee(room.getPeakSeasonMaxFee())
+                    .roomImageUrl(room.getRoomImageUrl())
+                    .bathFacility(room.getBathFacility())
+                    .internet(room.getInternet())
+                    .airCondition(room.getAirCondition())
+                    .build());
+        }
+
+        return entity;
+    }
+
+    public AccommodationDetailResponse toAccommodationDetailResponse(AccommodationEntity entity) {
+        List<RoomInfoResponse> rooms = entity.getRooms().stream()
+                .map(room -> RoomInfoResponse.builder()
+                        .roomTitle(room.getRoomTitle())
+                        .roomSize(room.getRoomSize())
+                        .roomCount(room.getRoomCount())
+                        .baseCount(room.getBaseCount())
+                        .maxCount(room.getMaxCount())
+                        .offSeasonMinFee(room.getOffSeasonMinFee())
+                        .offSeasonMaxFee(room.getOffSeasonMaxFee())
+                        .peakSeasonMinFee(room.getPeakSeasonMinFee())
+                        .peakSeasonMaxFee(room.getPeakSeasonMaxFee())
+                        .roomImageUrl(room.getRoomImageUrl())
+                        .bathFacility(room.getBathFacility())
+                        .internet(room.getInternet())
+                        .airCondition(room.getAirCondition())
+                        .build())
+                .toList();
+
+        return AccommodationDetailResponse.builder()
+                .id(entity.getId())
+                .cat1(entity.getCat1())
+                .cat2(entity.getCat2())
+                .cat3(entity.getCat3())
+                .title(entity.getTitle())
+                .region(entity.getRegion())
+                .category(entity.getCategory())
+                .address(entity.getAddress())
+                .imageUrl(entity.getImageUrl())
+                .imageUrls(new ArrayList<>(entity.getImageUrls()))
+                .tel(entity.getTel())
+                .homepage(entity.getHomepage())
+                .overview(entity.getOverview())
+                .description(entity.getDescription())
+                .descriptionSource(entity.getDescriptionSource())
+                .mapX(entity.getMapX())
+                .mapY(entity.getMapY())
+                .checkInTime(entity.getCheckInTime())
+                .checkOutTime(entity.getCheckOutTime())
+                .parking(entity.getParking())
+                .cookingAvailable(entity.getCookingAvailable())
+                .roomCount(entity.getRoomCount())
+                .infoCenter(entity.getInfoCenter())
+                .rooms(rooms)
+                .build();
     }
 
     private AccommodationSummaryResponse toAccommodationSummaryResponse(JsonNode item) {

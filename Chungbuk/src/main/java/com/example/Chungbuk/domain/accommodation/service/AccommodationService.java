@@ -5,12 +5,14 @@ import com.example.Chungbuk.domain.accommodation.dto.response.AccommodationDetai
 import com.example.Chungbuk.domain.accommodation.dto.response.AccommodationListResponse;
 import com.example.Chungbuk.domain.accommodation.dto.response.AccommodationSummaryResponse;
 import com.example.Chungbuk.domain.accommodation.mapper.AccommodationMapper;
+import com.example.Chungbuk.domain.accommodation.repository.AccommodationRepository;
 import com.example.Chungbuk.domain.festival.constant.ChungbukRegion;
 import com.example.Chungbuk.global.config.CacheConfig;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -18,6 +20,7 @@ public class AccommodationService {
 
     private final AccommodationApiClient accommodationApiClient;
     private final AccommodationMapper accommodationMapper;
+    private final AccommodationRepository accommodationRepository;
 
     private static final int DEFAULT_PAGE = 1;
 
@@ -69,21 +72,34 @@ public class AccommodationService {
             value = CacheConfig.ACCOMMODATION_DETAIL_CACHE,
             key = "#contentId == null ? '' : #contentId"
     )
+    @Transactional
     public AccommodationDetailResponse getAccommodationDetail(String contentId) {
         String validContentId = safe(contentId);
 
-        String detailCommonRawJson = accommodationApiClient.getAccommodationDetailCommonRaw(validContentId);
-        String detailIntroRawJson = accommodationApiClient.getAccommodationDetailIntroRaw(validContentId);
-        String detailImageRawJson = accommodationApiClient.getAccommodationDetailImageRaw(validContentId);
-        String roomInfoRawJson = accommodationApiClient.getAccommodationRoomInfoRaw(validContentId);
+        return accommodationRepository.findById(validContentId)
+                .map(accommodationMapper::toAccommodationDetailResponse)
+                .orElseGet(() -> fetchAndPersistAccommodationDetail(validContentId));
+    }
 
-        return accommodationMapper.toAccommodationDetailResponse(
+    private AccommodationDetailResponse fetchAndPersistAccommodationDetail(String contentId) {
+        String detailCommonRawJson = accommodationApiClient.getAccommodationDetailCommonRaw(contentId);
+        String detailIntroRawJson = accommodationApiClient.getAccommodationDetailIntroRaw(contentId);
+        String detailImageRawJson = accommodationApiClient.getAccommodationDetailImageRaw(contentId);
+        String roomInfoRawJson = accommodationApiClient.getAccommodationRoomInfoRaw(contentId);
+
+        AccommodationDetailResponse response = accommodationMapper.toAccommodationDetailResponse(
                 detailCommonRawJson,
                 detailIntroRawJson,
                 detailImageRawJson,
                 roomInfoRawJson,
-                validContentId
+                contentId
         );
+
+        if (hasText(response.getId()) && hasText(response.getTitle())) {
+            accommodationRepository.save(accommodationMapper.toEntity(response));
+        }
+
+        return response;
     }
 
     public String getAccommodationRaw(int page, int size, String region) {
