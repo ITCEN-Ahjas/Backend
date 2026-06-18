@@ -19,46 +19,51 @@ public interface FestivalContentRepository extends
 
     boolean existsByContentId(String contentId);
 
-    List<FestivalContent> findAllByContentIdIn(Collection<String> contentIds);
-
     long countByActiveTrue();
 
     long countByContentTypeIdAndActiveTrue(String contentTypeId);
 
+    List<FestivalContent> findAllByContentIdIn(Collection<String> contentIds);
+
+    List<FestivalContent> findAllByActiveTrueAndContentTypeIdIn(Collection<String> contentTypeIds);
+
     @Query("""
-            select count(content)
-            from FestivalContent content
-            where content.active = true
+            select count(f)
+            from FestivalContent f
+            where f.active = true
               and (
-                    (content.description is not null and content.description <> '')
-                 or (content.overview is not null and content.overview <> '')
-                 or (content.mainInfoJson is not null and content.mainInfoJson <> '')
+                    coalesce(f.overview, '') <> ''
+                    or coalesce(f.description, '') <> ''
+                    or (
+                        f.mainInfoJson is not null
+                        and f.mainInfoJson <> ''
+                        and f.mainInfoJson <> '[]'
+                    )
               )
             """)
     long countDetailSyncedContents();
 
     @Query("""
-            select max(content.lastSyncedAt)
-            from FestivalContent content
-            where content.active = true
+            select max(f.lastSyncedAt)
+            from FestivalContent f
             """)
     LocalDateTime findLatestSyncedAt();
 
     @Query("""
-            select content.contentTypeId, count(content)
-            from FestivalContent content
-            where content.active = true
-            group by content.contentTypeId
-            order by content.contentTypeId
+            select coalesce(f.contentTypeId, 'UNKNOWN'), count(f)
+            from FestivalContent f
+            where f.active = true
+            group by coalesce(f.contentTypeId, 'UNKNOWN')
+            order by coalesce(f.contentTypeId, 'UNKNOWN')
             """)
     List<Object[]> countActiveContentsByContentTypeId();
 
     @Query("""
-            select content.category, count(content)
-            from FestivalContent content
-            where content.active = true
-            group by content.category
-            order by content.category
+            select coalesce(f.category, 'UNKNOWN'), count(f)
+            from FestivalContent f
+            where f.active = true
+            group by coalesce(f.category, 'UNKNOWN')
+            order by coalesce(f.category, 'UNKNOWN')
             """)
     List<Object[]> countActiveContentsByCategory();
 }

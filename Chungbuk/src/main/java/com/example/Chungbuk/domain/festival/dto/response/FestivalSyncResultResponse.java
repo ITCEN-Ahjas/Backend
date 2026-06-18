@@ -15,6 +15,7 @@ public class FestivalSyncResultResponse {
 
     private int insertedCount;
     private int updatedCount;
+    private int deactivatedCount;
 
     private int tourApiCallCount;
     private int skippedDetailCount;
@@ -34,6 +35,7 @@ public class FestivalSyncResultResponse {
 
     private boolean includeDetail;
     private boolean automaticSync;
+    private boolean deactivateMissing;
 
     private String eventStartDate;
     private String message;

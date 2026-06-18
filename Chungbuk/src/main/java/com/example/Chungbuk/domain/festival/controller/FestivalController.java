@@ -33,7 +33,7 @@ public class FestivalController {
             summary = "축제 목록 조회",
             description = """
                     DB에 저장된 충북 행사/공연/축제 목록을 조회합니다.
-                    프론트엔드 요청마다 TourAPI를 직접 호출하지 않고, 수동 동기화로 저장된 festival_contents 데이터를 기준으로 응답합니다.
+                    프론트엔드 요청마다 TourAPI를 직접 호출하지 않고, 수동 또는 자동 동기화로 저장된 festival_contents 데이터를 기준으로 응답합니다.
                     지역, 카테고리, 키워드, 행사 시작 기준일 조건을 사용할 수 있습니다.
                     """
     )
@@ -170,10 +170,14 @@ public class FestivalController {
                     TourAPI totalCount를 기준으로 전체 페이지 수를 자동 계산한 뒤 축제, 관광지, 문화시설, 레포츠 데이터를 DB에 저장하거나 갱신합니다.
                     사용자가 festivalEndPage, experienceEndPage를 직접 계산하지 않아도 됩니다.
                     기본적으로 목록 데이터를 먼저 채우고, includeDetail=true인 경우 detailLimit 개수만큼 상세 데이터도 자동 보강합니다.
-                    TourAPI 호출 제한을 고려하여 maxPages와 detailLimit을 함께 사용합니다.
+                    
+                    deactivateMissing=true인 경우 전체 동기화에서 더 이상 조회되지 않은 기존 데이터를 active=false로 비활성화합니다.
+                    단, maxPages 제한 또는 TourAPI 호출 제한으로 전체 동기화가 끝까지 완료되지 않은 경우에는 안전을 위해 비활성화 처리를 수행하지 않습니다.
+                    
+                    스케줄러는 매일 새벽 기본값 기준으로 이 흐름을 자동 실행합니다.
                     
                     예시:
-                    POST /api/festivals/sync/all?size=30&maxPages=20&eventStartDate=20230101&includeDetail=true&detailLimit=30
+                    POST /api/festivals/sync/all?size=30&maxPages=20&eventStartDate=20230101&includeDetail=true&detailLimit=30&deactivateMissing=true
                     """
     )
     @PostMapping("/sync/all")
@@ -182,14 +186,16 @@ public class FestivalController {
             @RequestParam(defaultValue = "20") int maxPages,
             @RequestParam(required = false) String eventStartDate,
             @RequestParam(defaultValue = "false") boolean includeDetail,
-            @RequestParam(defaultValue = "30") int detailLimit
+            @RequestParam(defaultValue = "30") int detailLimit,
+            @RequestParam(defaultValue = "false") boolean deactivateMissing
     ) {
         return festivalSyncService.syncFestivalContentsAll(
                 size,
                 maxPages,
                 eventStartDate,
                 includeDetail,
-                detailLimit
+                detailLimit,
+                deactivateMissing
         );
     }
 
@@ -224,7 +230,7 @@ public class FestivalController {
             summary = "축제/체험 상세 조회",
             description = """
                     contentId로 DB에 저장된 축제/체험 상세 정보를 조회합니다.
-                    TourAPI를 실시간 호출하지 않고, 수동 동기화로 저장된 festival_contents 데이터를 기준으로 응답합니다.
+                    TourAPI를 실시간 호출하지 않고, 수동 또는 자동 동기화로 저장된 festival_contents 데이터를 기준으로 응답합니다.
                     """
     )
     @GetMapping("/{contentId}")

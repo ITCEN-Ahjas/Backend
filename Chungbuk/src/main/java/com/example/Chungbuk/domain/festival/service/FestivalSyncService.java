@@ -18,12 +18,15 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestClientException;
 
 @Service
 @RequiredArgsConstructor
@@ -54,6 +57,7 @@ public class FestivalSyncService {
     private static final String DETAIL_FALLBACK_EVENT_START_DATE = "20230101";
 
     private static final List<String> AUTO_SYNC_EXPERIENCE_CONTENT_TYPE_IDS = List.of("12", "14", "28");
+    private static final List<String> AUTO_SYNC_CONTENT_TYPE_IDS = List.of("12", "14", "15", "28");
 
     private static final DateTimeFormatter TOUR_API_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
@@ -139,6 +143,7 @@ public class FestivalSyncService {
                 .detailSyncedCount(counter.getDetailSyncedCount())
                 .insertedCount(counter.getInsertedCount())
                 .updatedCount(counter.getUpdatedCount())
+                .deactivatedCount(counter.getDeactivatedCount())
                 .tourApiCallCount(counter.getTourApiCallCount())
                 .skippedDetailCount(counter.getSkippedDetailCount())
                 .festivalPage(validFestivalPage)
@@ -153,6 +158,7 @@ public class FestivalSyncService {
                 .detailLimit(includeDetail ? MAX_DETAIL_SYNC_COUNT : 0)
                 .includeDetail(includeDetail)
                 .automaticSync(false)
+                .deactivateMissing(false)
                 .eventStartDate(validEventStartDate)
                 .message(buildMessage(includeDetail, counter))
                 .build();
@@ -201,6 +207,10 @@ public class FestivalSyncService {
                     counter
             );
 
+            if (!pageResult.success()) {
+                break;
+            }
+
             festivalItems.addAll(pageResult.items());
             lastFestivalPage = page;
         }
@@ -217,6 +227,10 @@ public class FestivalSyncService {
                     syncedAt,
                     counter
             );
+
+            if (!pageResult.success()) {
+                break;
+            }
 
             experienceItems.addAll(pageResult.items());
             lastExperiencePage = page;
@@ -236,6 +250,7 @@ public class FestivalSyncService {
                 .detailSyncedCount(counter.getDetailSyncedCount())
                 .insertedCount(counter.getInsertedCount())
                 .updatedCount(counter.getUpdatedCount())
+                .deactivatedCount(counter.getDeactivatedCount())
                 .tourApiCallCount(counter.getTourApiCallCount())
                 .skippedDetailCount(counter.getSkippedDetailCount())
                 .festivalPage(validFestivalStartPage)
@@ -250,6 +265,7 @@ public class FestivalSyncService {
                 .detailLimit(includeDetail ? MAX_DETAIL_SYNC_COUNT : 0)
                 .includeDetail(includeDetail)
                 .automaticSync(false)
+                .deactivateMissing(false)
                 .eventStartDate(validEventStartDate)
                 .message(buildBulkMessage(includeDetail, counter))
                 .build();
@@ -263,6 +279,25 @@ public class FestivalSyncService {
             boolean includeDetail,
             int detailLimit
     ) {
+        return syncFestivalContentsAll(
+                size,
+                maxPages,
+                eventStartDate,
+                includeDetail,
+                detailLimit,
+                false
+        );
+    }
+
+    @Transactional
+    public FestivalSyncResultResponse syncFestivalContentsAll(
+            int size,
+            int maxPages,
+            String eventStartDate,
+            boolean includeDetail,
+            int detailLimit,
+            boolean deactivateMissing
+    ) {
         int validSize = normalizeSize(size);
         int validMaxPages = normalizeMaxPages(maxPages);
         int validDetailLimit = normalizeDetailLimit(detailLimit);
@@ -274,7 +309,7 @@ public class FestivalSyncService {
         List<FestivalSummaryResponse> festivalItems = new ArrayList<>();
         List<ExperienceSummaryResponse> experienceItems = new ArrayList<>();
 
-        int lastFestivalPage = syncFestivalAllPages(
+        SyncSectionResult festivalSectionResult = syncFestivalAllPages(
                 validSize,
                 validMaxPages,
                 validEventStartDate,
@@ -284,9 +319,10 @@ public class FestivalSyncService {
         );
 
         int lastExperiencePage = 0;
+        boolean experienceSyncCompleted = true;
 
         for (String contentTypeId : AUTO_SYNC_EXPERIENCE_CONTENT_TYPE_IDS) {
-            int lastPage = syncExperienceAllPages(
+            SyncSectionResult sectionResult = syncExperienceAllPages(
                     contentTypeId,
                     validSize,
                     validMaxPages,
@@ -295,8 +331,14 @@ public class FestivalSyncService {
                     experienceItems
             );
 
-            lastExperiencePage = Math.max(lastExperiencePage, lastPage);
+            lastExperiencePage = Math.max(lastExperiencePage, sectionResult.lastSyncedPage());
+
+            if (!sectionResult.completed()) {
+                experienceSyncCompleted = false;
+            }
         }
+
+        boolean listSyncCompleted = festivalSectionResult.completed() && experienceSyncCompleted;
 
         if (includeDetail) {
             syncDetailsWithinLimit(
@@ -311,12 +353,18 @@ public class FestivalSyncService {
             counter.addSkippedDetailCount(festivalItems.size() + experienceItems.size());
         }
 
+        if (deactivateMissing && listSyncCompleted) {
+            Set<String> seenContentIds = collectSeenContentIds(festivalItems, experienceItems);
+            deactivateMissingContents(seenContentIds, syncedAt, counter);
+        }
+
         return FestivalSyncResultResponse.builder()
                 .festivalSavedCount(counter.getFestivalSavedCount())
                 .experienceSavedCount(counter.getExperienceSavedCount())
                 .detailSyncedCount(counter.getDetailSyncedCount())
                 .insertedCount(counter.getInsertedCount())
                 .updatedCount(counter.getUpdatedCount())
+                .deactivatedCount(counter.getDeactivatedCount())
                 .tourApiCallCount(counter.getTourApiCallCount())
                 .skippedDetailCount(counter.getSkippedDetailCount())
                 .festivalPage(DEFAULT_PAGE)
@@ -324,15 +372,16 @@ public class FestivalSyncService {
                 .experiencePage(DEFAULT_PAGE)
                 .experienceSize(validSize)
                 .festivalStartPage(DEFAULT_PAGE)
-                .festivalEndPage(lastFestivalPage)
+                .festivalEndPage(festivalSectionResult.lastSyncedPage())
                 .experienceStartPage(DEFAULT_PAGE)
                 .experienceEndPage(lastExperiencePage)
                 .maxPages(validMaxPages)
                 .detailLimit(validDetailLimit)
                 .includeDetail(includeDetail)
                 .automaticSync(true)
+                .deactivateMissing(deactivateMissing && listSyncCompleted)
                 .eventStartDate(validEventStartDate)
-                .message(buildAllSyncMessage(includeDetail, counter))
+                .message(buildAllSyncMessage(includeDetail, deactivateMissing, listSyncCompleted, counter))
                 .build();
     }
 
@@ -349,6 +398,7 @@ public class FestivalSyncService {
                 .detailSyncedCount(counter.getDetailSyncedCount())
                 .insertedCount(counter.getInsertedCount())
                 .updatedCount(counter.getUpdatedCount())
+                .deactivatedCount(counter.getDeactivatedCount())
                 .tourApiCallCount(counter.getTourApiCallCount())
                 .skippedDetailCount(counter.getSkippedDetailCount())
                 .festivalPage(0)
@@ -363,12 +413,13 @@ public class FestivalSyncService {
                 .detailLimit(1)
                 .includeDetail(true)
                 .automaticSync(false)
+                .deactivateMissing(false)
                 .eventStartDate("")
                 .message("contentId 기준으로 TourAPI 상세 데이터를 DB에 저장/갱신했습니다.")
                 .build();
     }
 
-    private int syncFestivalAllPages(
+    private SyncSectionResult syncFestivalAllPages(
             int size,
             int maxPages,
             String eventStartDate,
@@ -377,7 +428,7 @@ public class FestivalSyncService {
             List<FestivalSummaryResponse> collector
     ) {
         if (!canCallListApi(counter)) {
-            return 0;
+            return new SyncSectionResult(0, false);
         }
 
         SyncPageResult<FestivalSummaryResponse> firstPage = syncFestivalPage(
@@ -388,15 +439,20 @@ public class FestivalSyncService {
                 counter
         );
 
+        if (!firstPage.success()) {
+            return new SyncSectionResult(0, false);
+        }
+
         collector.addAll(firstPage.items());
 
         int totalPages = calculateTotalPages(firstPage.totalCount(), size);
         int endPage = Math.min(totalPages, maxPages);
+        boolean completed = totalPages <= maxPages;
         int lastSyncedPage = DEFAULT_PAGE;
 
         for (int page = DEFAULT_PAGE + 1; page <= endPage; page++) {
             if (!canCallListApi(counter)) {
-                break;
+                return new SyncSectionResult(lastSyncedPage, false);
             }
 
             SyncPageResult<FestivalSummaryResponse> pageResult = syncFestivalPage(
@@ -407,14 +463,18 @@ public class FestivalSyncService {
                     counter
             );
 
+            if (!pageResult.success()) {
+                return new SyncSectionResult(lastSyncedPage, false);
+            }
+
             collector.addAll(pageResult.items());
             lastSyncedPage = page;
         }
 
-        return lastSyncedPage;
+        return new SyncSectionResult(lastSyncedPage, completed);
     }
 
-    private int syncExperienceAllPages(
+    private SyncSectionResult syncExperienceAllPages(
             String contentTypeId,
             int size,
             int maxPages,
@@ -423,7 +483,7 @@ public class FestivalSyncService {
             List<ExperienceSummaryResponse> collector
     ) {
         if (!canCallListApi(counter)) {
-            return 0;
+            return new SyncSectionResult(0, false);
         }
 
         SyncPageResult<ExperienceSummaryResponse> firstPage = syncExperiencePage(
@@ -434,15 +494,20 @@ public class FestivalSyncService {
                 counter
         );
 
+        if (!firstPage.success()) {
+            return new SyncSectionResult(0, false);
+        }
+
         collector.addAll(firstPage.items());
 
         int totalPages = calculateTotalPages(firstPage.totalCount(), size);
         int endPage = Math.min(totalPages, maxPages);
+        boolean completed = totalPages <= maxPages;
         int lastSyncedPage = DEFAULT_PAGE;
 
         for (int page = DEFAULT_PAGE + 1; page <= endPage; page++) {
             if (!canCallListApi(counter)) {
-                break;
+                return new SyncSectionResult(lastSyncedPage, false);
             }
 
             SyncPageResult<ExperienceSummaryResponse> pageResult = syncExperiencePage(
@@ -453,11 +518,15 @@ public class FestivalSyncService {
                     counter
             );
 
+            if (!pageResult.success()) {
+                return new SyncSectionResult(lastSyncedPage, false);
+            }
+
             collector.addAll(pageResult.items());
             lastSyncedPage = page;
         }
 
-        return lastSyncedPage;
+        return new SyncSectionResult(lastSyncedPage, completed);
     }
 
     private SyncPageResult<FestivalSummaryResponse> syncFestivalPage(
@@ -467,13 +536,17 @@ public class FestivalSyncService {
             LocalDateTime syncedAt,
             SyncCounter counter
     ) {
-        String festivalRawJson = tourApiClient.getFestivalListRaw(
+        String festivalRawJson = requestFestivalListRaw(
                 validFestivalPage,
                 validFestivalSize,
                 validEventStartDate,
-                null
+                null,
+                counter
         );
-        counter.increaseTourApiCallCount();
+
+        if (!hasText(festivalRawJson)) {
+            return new SyncPageResult<>(List.of(), 0, false);
+        }
 
         FestivalListResponse festivalListResponse = festivalMapper.toFestivalListResponse(
                 festivalRawJson,
@@ -489,7 +562,7 @@ public class FestivalSyncService {
 
         int totalCount = parseTourApiTotalCount(festivalRawJson, festivalItems.size());
 
-        return new SyncPageResult<>(festivalItems, totalCount);
+        return new SyncPageResult<>(festivalItems, totalCount, true);
     }
 
     private SyncPageResult<ExperienceSummaryResponse> syncExperiencePage(
@@ -499,13 +572,17 @@ public class FestivalSyncService {
             LocalDateTime syncedAt,
             SyncCounter counter
     ) {
-        String experienceRawJson = tourApiClient.getExperienceListRaw(
+        String experienceRawJson = requestExperienceListRaw(
                 validExperiencePage,
                 validExperienceSize,
                 null,
-                contentTypeId
+                contentTypeId,
+                counter
         );
-        counter.increaseTourApiCallCount();
+
+        if (!hasText(experienceRawJson)) {
+            return new SyncPageResult<>(List.of(), 0, false);
+        }
 
         ExperienceListResponse experienceListResponse = festivalMapper.toExperienceListResponse(
                 experienceRawJson,
@@ -521,7 +598,91 @@ public class FestivalSyncService {
 
         int totalCount = parseTourApiTotalCount(experienceRawJson, experienceItems.size());
 
-        return new SyncPageResult<>(experienceItems, totalCount);
+        return new SyncPageResult<>(experienceItems, totalCount, true);
+    }
+
+    private String requestFestivalListRaw(
+            int page,
+            int size,
+            String eventStartDate,
+            String region,
+            SyncCounter counter
+    ) {
+        counter.increaseTourApiCallCount();
+
+        try {
+            return tourApiClient.getFestivalListRaw(
+                    page,
+                    size,
+                    eventStartDate,
+                    region
+            );
+        } catch (RestClientException e) {
+            counter.increaseFailedRequestCount();
+            return "";
+        }
+    }
+
+    private String requestExperienceListRaw(
+            int page,
+            int size,
+            String region,
+            String contentTypeId,
+            SyncCounter counter
+    ) {
+        counter.increaseTourApiCallCount();
+
+        try {
+            return tourApiClient.getExperienceListRaw(
+                    page,
+                    size,
+                    region,
+                    contentTypeId
+            );
+        } catch (RestClientException e) {
+            counter.increaseFailedRequestCount();
+            return "";
+        }
+    }
+
+    private String requestDetailCommonRaw(String contentId, SyncCounter counter) {
+        counter.increaseTourApiCallCount();
+
+        try {
+            return tourApiClient.getFestivalDetailCommonRaw(contentId);
+        } catch (RestClientException e) {
+            counter.increaseFailedRequestCount();
+            return "";
+        }
+    }
+
+    private String requestDetailIntroRaw(
+            String contentId,
+            String contentTypeId,
+            SyncCounter counter
+    ) {
+        counter.increaseTourApiCallCount();
+
+        try {
+            return tourApiClient.getFestivalDetailIntroRaw(
+                    contentId,
+                    contentTypeId
+            );
+        } catch (RestClientException e) {
+            counter.increaseFailedRequestCount();
+            return "";
+        }
+    }
+
+    private String requestDetailImageRaw(String contentId, SyncCounter counter) {
+        counter.increaseTourApiCallCount();
+
+        try {
+            return tourApiClient.getFestivalDetailImageRaw(contentId);
+        } catch (RestClientException e) {
+            counter.increaseFailedRequestCount();
+            return "";
+        }
     }
 
     private void syncDetailIfRequested(
@@ -568,8 +729,9 @@ public class FestivalSyncService {
                 continue;
             }
 
-            syncDetail(item.getId(), syncedAt, counter);
-            detailSyncCount++;
+            if (syncDetail(item.getId(), syncedAt, counter)) {
+                detailSyncCount++;
+            }
         }
 
         for (ExperienceSummaryResponse item : experienceItems) {
@@ -583,8 +745,9 @@ public class FestivalSyncService {
                 continue;
             }
 
-            syncDetail(item.getId(), syncedAt, counter);
-            detailSyncCount++;
+            if (syncDetail(item.getId(), syncedAt, counter)) {
+                detailSyncCount++;
+            }
         }
     }
 
@@ -596,26 +759,30 @@ public class FestivalSyncService {
         return counter.getTourApiCallCount() + 4 <= MAX_TOUR_API_CALL_COUNT;
     }
 
-    private void syncDetail(
+    private boolean syncDetail(
             String contentId,
             LocalDateTime syncedAt,
             SyncCounter counter
     ) {
         if (!hasText(contentId)) {
             counter.increaseSkippedDetailCount();
-            return;
+            return false;
         }
 
-        String detailCommonRawJson = tourApiClient.getFestivalDetailCommonRaw(contentId);
-        counter.increaseTourApiCallCount();
+        String detailCommonRawJson = requestDetailCommonRaw(contentId, counter);
 
-        String fallbackListRawJson = tourApiClient.getFestivalListRaw(
+        if (!hasText(detailCommonRawJson)) {
+            counter.increaseSkippedDetailCount();
+            return false;
+        }
+
+        String fallbackListRawJson = requestFestivalListRaw(
                 DEFAULT_PAGE,
                 DETAIL_FALLBACK_SIZE,
                 DETAIL_FALLBACK_EVENT_START_DATE,
-                null
+                null,
+                counter
         );
-        counter.increaseTourApiCallCount();
 
         String contentTypeId = firstNonBlank(
                 festivalMapper.extractContentTypeId(detailCommonRawJson),
@@ -623,14 +790,13 @@ public class FestivalSyncService {
                 DEFAULT_FESTIVAL_CONTENT_TYPE_ID
         );
 
-        String detailIntroRawJson = tourApiClient.getFestivalDetailIntroRaw(
+        String detailIntroRawJson = requestDetailIntroRaw(
                 contentId,
-                contentTypeId
+                contentTypeId,
+                counter
         );
-        counter.increaseTourApiCallCount();
 
-        String detailImageRawJson = tourApiClient.getFestivalDetailImageRaw(contentId);
-        counter.increaseTourApiCallCount();
+        String detailImageRawJson = requestDetailImageRaw(contentId, counter);
 
         FestivalDetailResponse detailResponse = festivalMapper.toFestivalDetailResponse(
                 detailCommonRawJson,
@@ -641,6 +807,8 @@ public class FestivalSyncService {
         );
 
         upsertDetail(detailResponse, syncedAt, counter);
+
+        return true;
     }
 
     private void upsertFestivalSummary(
@@ -808,6 +976,53 @@ public class FestivalSyncService {
         counter.increaseDetailSyncedCount();
     }
 
+    private Set<String> collectSeenContentIds(
+            List<FestivalSummaryResponse> festivalItems,
+            List<ExperienceSummaryResponse> experienceItems
+    ) {
+        Set<String> seenContentIds = new HashSet<>();
+
+        for (FestivalSummaryResponse item : festivalItems) {
+            if (item != null && hasText(item.getId())) {
+                seenContentIds.add(item.getId());
+            }
+        }
+
+        for (ExperienceSummaryResponse item : experienceItems) {
+            if (item != null && hasText(item.getId())) {
+                seenContentIds.add(item.getId());
+            }
+        }
+
+        return seenContentIds;
+    }
+
+    private void deactivateMissingContents(
+            Set<String> seenContentIds,
+            LocalDateTime syncedAt,
+            SyncCounter counter
+    ) {
+        if (seenContentIds == null || seenContentIds.isEmpty()) {
+            return;
+        }
+
+        List<FestivalContent> activeContents = festivalContentRepository
+                .findAllByActiveTrueAndContentTypeIdIn(AUTO_SYNC_CONTENT_TYPE_IDS);
+
+        List<FestivalContent> missingContents = activeContents.stream()
+                .filter(content -> hasText(content.getContentId()))
+                .filter(content -> !seenContentIds.contains(content.getContentId()))
+                .toList();
+
+        for (FestivalContent content : missingContents) {
+            content.deactivate();
+            content.updateLastSyncedAt(syncedAt);
+            counter.increaseDeactivatedCount();
+        }
+
+        festivalContentRepository.saveAll(missingContents);
+    }
+
     private boolean hasExistingDetail(String contentId) {
         if (!hasText(contentId)) {
             return false;
@@ -947,6 +1162,10 @@ public class FestivalSyncService {
     }
 
     private String buildMessage(boolean includeDetail, SyncCounter counter) {
+        if (counter.getFailedRequestCount() > 0) {
+            return "TourAPI 일부 요청이 timeout 또는 네트워크 오류로 실패했습니다. 실패한 요청은 건너뛰고 가능한 데이터만 DB에 저장/갱신했습니다.";
+        }
+
         if (includeDetail) {
             if (counter.getDetailSyncedCount() > 0) {
                 return "TourAPI 데이터를 DB에 저장/갱신했습니다. 상세 데이터는 트래픽 제한을 고려하여 일부만 보강했습니다.";
@@ -959,6 +1178,10 @@ public class FestivalSyncService {
     }
 
     private String buildBulkMessage(boolean includeDetail, SyncCounter counter) {
+        if (counter.getFailedRequestCount() > 0) {
+            return "TourAPI 일부 요청이 timeout 또는 네트워크 오류로 실패했습니다. 실패 지점 이후 동기화는 중단했고, 누락 데이터 비활성화는 수행하지 않았습니다.";
+        }
+
         if (counter.getTourApiCallCount() >= MAX_TOUR_API_CALL_COUNT) {
             return "TourAPI 목록 데이터를 여러 페이지 범위로 DB에 저장/갱신했습니다. 서버 보호용 TourAPI 호출 제한 기준에 도달하여 일부 페이지 또는 상세 데이터 동기화가 중단될 수 있습니다.";
         }
@@ -974,9 +1197,30 @@ public class FestivalSyncService {
         return "TourAPI 목록 데이터를 여러 페이지 범위로 DB에 저장/갱신했습니다. 상세 데이터 보강은 contentId 단건 상세 동기화 API에서 수행할 수 있습니다.";
     }
 
-    private String buildAllSyncMessage(boolean includeDetail, SyncCounter counter) {
+    private String buildAllSyncMessage(
+            boolean includeDetail,
+            boolean deactivateMissing,
+            boolean listSyncCompleted,
+            SyncCounter counter
+    ) {
+        if (counter.getFailedRequestCount() > 0) {
+            return "TourAPI 일부 요청이 timeout 또는 네트워크 오류로 실패했습니다. 가능한 데이터만 저장/갱신했으며, 안전을 위해 누락 데이터 비활성화 처리는 수행하지 않았습니다.";
+        }
+
         if (counter.getTourApiCallCount() >= MAX_TOUR_API_CALL_COUNT) {
-            return "TourAPI totalCount 기준으로 전체 페이지 동기화를 시도했습니다. 서버 보호용 TourAPI 호출 제한 기준에 도달하여 일부 페이지 또는 상세 데이터 동기화가 중단될 수 있습니다.";
+            return "TourAPI totalCount 기준으로 전체 페이지 동기화를 시도했습니다. 서버 보호용 TourAPI 호출 제한 기준에 도달하여 일부 페이지 또는 상세 데이터 동기화가 중단될 수 있습니다. 안전을 위해 누락 데이터 비활성화 처리는 수행하지 않았습니다.";
+        }
+
+        if (deactivateMissing && !listSyncCompleted) {
+            return "TourAPI 전체 페이지 동기화가 maxPages 제한 또는 호출 제한으로 끝까지 완료되지 않아 누락 데이터 비활성화 처리는 수행하지 않았습니다.";
+        }
+
+        if (deactivateMissing && listSyncCompleted) {
+            if (includeDetail) {
+                return "TourAPI totalCount 기준으로 축제/관광지/문화시설/레포츠 데이터를 자동 동기화하고, detailLimit 범위 내에서 상세 데이터를 보강했습니다. 전체 동기화에서 더 이상 조회되지 않은 기존 데이터는 비활성화 처리했습니다.";
+            }
+
+            return "TourAPI totalCount 기준으로 축제/관광지/문화시설/레포츠 목록 데이터를 자동 동기화했습니다. 전체 동기화에서 더 이상 조회되지 않은 기존 데이터는 비활성화 처리했습니다.";
         }
 
         if (includeDetail) {
@@ -1068,7 +1312,14 @@ public class FestivalSyncService {
 
     private record SyncPageResult<T>(
             List<T> items,
-            int totalCount
+            int totalCount,
+            boolean success
+    ) {
+    }
+
+    private record SyncSectionResult(
+            int lastSyncedPage,
+            boolean completed
     ) {
     }
 
@@ -1080,9 +1331,11 @@ public class FestivalSyncService {
 
         private int insertedCount;
         private int updatedCount;
+        private int deactivatedCount;
 
         private int tourApiCallCount;
         private int skippedDetailCount;
+        private int failedRequestCount;
 
         public int getFestivalSavedCount() {
             return festivalSavedCount;
@@ -1104,12 +1357,20 @@ public class FestivalSyncService {
             return updatedCount;
         }
 
+        public int getDeactivatedCount() {
+            return deactivatedCount;
+        }
+
         public int getTourApiCallCount() {
             return tourApiCallCount;
         }
 
         public int getSkippedDetailCount() {
             return skippedDetailCount;
+        }
+
+        public int getFailedRequestCount() {
+            return failedRequestCount;
         }
 
         public void increaseFestivalSavedCount() {
@@ -1132,6 +1393,10 @@ public class FestivalSyncService {
             updatedCount++;
         }
 
+        public void increaseDeactivatedCount() {
+            deactivatedCount++;
+        }
+
         public void increaseTourApiCallCount() {
             tourApiCallCount++;
         }
@@ -1142,6 +1407,10 @@ public class FestivalSyncService {
 
         public void addSkippedDetailCount(int count) {
             skippedDetailCount += count;
+        }
+
+        public void increaseFailedRequestCount() {
+            failedRequestCount++;
         }
     }
 }
