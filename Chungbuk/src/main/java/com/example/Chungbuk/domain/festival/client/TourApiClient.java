@@ -10,13 +10,13 @@ import org.springframework.web.util.UriComponentsBuilder;
 @RequiredArgsConstructor
 public class TourApiClient {
 
-    private final RestTemplate restTemplate;
-    private final TourApiProperties tourApiProperties;
-
     private static final String CHUNGBUK_AREA_CODE = "33";
     private static final String DEFAULT_MOBILE_OS = "ETC";
     private static final String DEFAULT_MOBILE_APP = "ChungbukTravel";
     private static final String RESPONSE_TYPE_JSON = "json";
+
+    private final RestTemplate restTemplate;
+    private final TourApiProperties tourApiProperties;
 
     public String getFestivalListRaw(
             int page,
@@ -34,45 +34,6 @@ public class TourApiClient {
         if (hasText(sigunguCode)) {
             uriBuilder.queryParam("sigunguCode", sigunguCode);
         }
-
-        return restTemplate.getForObject(
-                uriBuilder.build(true).toUri(),
-                String.class
-        );
-    }
-
-    public String getFestivalDetailCommonRaw(String contentId) {
-        UriComponentsBuilder uriBuilder = createBaseUriBuilder("/detailCommon2")
-                .queryParam("contentId", contentId)
-                .queryParam("numOfRows", 1)
-                .queryParam("pageNo", 1);
-
-        return restTemplate.getForObject(
-                uriBuilder.build(true).toUri(),
-                String.class
-        );
-    }
-
-    public String getFestivalDetailIntroRaw(String contentId, String contentTypeId) {
-        UriComponentsBuilder uriBuilder = createBaseUriBuilder("/detailIntro2")
-                .queryParam("contentId", contentId)
-                .queryParam("contentTypeId", contentTypeId)
-                .queryParam("numOfRows", 1)
-                .queryParam("pageNo", 1);
-
-        return restTemplate.getForObject(
-                uriBuilder.build(true).toUri(),
-                String.class
-        );
-    }
-
-    public String getFestivalDetailImageRaw(String contentId) {
-        UriComponentsBuilder uriBuilder = createBaseUriBuilder("/detailImage2")
-                .queryParam("contentId", contentId)
-                .queryParam("imageYN", "Y")
-                .queryParam("subImageYN", "Y")
-                .queryParam("numOfRows", 10)
-                .queryParam("pageNo", 1);
 
         return restTemplate.getForObject(
                 uriBuilder.build(true).toUri(),
@@ -99,6 +60,48 @@ public class TourApiClient {
         if (hasText(contentTypeId)) {
             uriBuilder.queryParam("contentTypeId", contentTypeId);
         }
+
+        return restTemplate.getForObject(
+                uriBuilder.build(true).toUri(),
+                String.class
+        );
+    }
+
+    public String getFestivalDetailCommonRaw(String contentId) {
+        UriComponentsBuilder uriBuilder = createBaseUriBuilder("/detailCommon2")
+                .queryParam("contentId", contentId)
+                .queryParam("numOfRows", 1)
+                .queryParam("pageNo", 1);
+
+        return restTemplate.getForObject(
+                uriBuilder.build(true).toUri(),
+                String.class
+        );
+    }
+
+    public String getFestivalDetailIntroRaw(
+            String contentId,
+            String contentTypeId
+    ) {
+        UriComponentsBuilder uriBuilder = createBaseUriBuilder("/detailIntro2")
+                .queryParam("contentId", contentId)
+                .queryParam("contentTypeId", contentTypeId)
+                .queryParam("numOfRows", 1)
+                .queryParam("pageNo", 1);
+
+        return restTemplate.getForObject(
+                uriBuilder.build(true).toUri(),
+                String.class
+        );
+    }
+
+    public String getFestivalDetailImageRaw(String contentId) {
+        UriComponentsBuilder uriBuilder = createBaseUriBuilder("/detailImage2")
+                .queryParam("contentId", contentId)
+                .queryParam("imageYN", "Y")
+                .queryParam("subImageYN", "Y")
+                .queryParam("numOfRows", 10)
+                .queryParam("pageNo", 1);
 
         return restTemplate.getForObject(
                 uriBuilder.build(true).toUri(),

@@ -1,5 +1,6 @@
 package com.example.Chungbuk.domain.festival.dto.response;
 
+import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -20,6 +21,9 @@ public class FestivalSyncResultResponse {
     private int tourApiCallCount;
     private int skippedDetailCount;
 
+    private int detailEmptyCount;
+    private int failedRequestCount;
+
     private int festivalPage;
     private int festivalSize;
     private int experiencePage;
@@ -36,7 +40,10 @@ public class FestivalSyncResultResponse {
     private boolean includeDetail;
     private boolean automaticSync;
     private boolean deactivateMissing;
+    private boolean sequential;
 
     private String eventStartDate;
     private String message;
+
+    private List<FestivalSyncGroupResultResponse> groupResults;
 }

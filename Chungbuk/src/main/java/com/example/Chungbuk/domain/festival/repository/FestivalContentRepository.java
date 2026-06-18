@@ -19,51 +19,75 @@ public interface FestivalContentRepository extends
 
     boolean existsByContentId(String contentId);
 
+    List<FestivalContent> findAllByContentIdIn(
+            Collection<String> contentIds
+    );
+
+    List<FestivalContent> findAllByActiveTrueAndContentTypeIdIn(
+            Collection<String> contentTypeIds
+    );
+
+    List<FestivalContent>
+    findAllByActiveTrueAndContentTypeIdInOrderByContentTypeIdAscIdAsc(
+            Collection<String> contentTypeIds
+    );
+
     long countByActiveTrue();
 
-    long countByContentTypeIdAndActiveTrue(String contentTypeId);
+    long countByContentTypeIdAndActiveTrue(
+            String contentTypeId
+    );
 
-    List<FestivalContent> findAllByContentIdIn(Collection<String> contentIds);
-
-    List<FestivalContent> findAllByActiveTrueAndContentTypeIdIn(Collection<String> contentTypeIds);
-
-    @Query("""
-            select count(f)
-            from FestivalContent f
-            where f.active = true
-              and (
-                    coalesce(f.overview, '') <> ''
-                    or coalesce(f.description, '') <> ''
-                    or (
-                        f.mainInfoJson is not null
-                        and f.mainInfoJson <> ''
-                        and f.mainInfoJson <> '[]'
-                    )
-              )
-            """)
+    /*
+     * JPQL에서 TEXT/CLOB 컬럼을 빈 문자열과 비교하면
+     * DB·Hibernate 조합에 따라 실제 상세 데이터가 있어도
+     * 0건으로 집계되는 문제가 생길 수 있다.
+     *
+     * 상태 API 전용 집계는 MySQL native query로 처리한다.
+     */
+    @Query(
+            value = """
+                    SELECT COUNT(*)
+                    FROM festival_contents
+                    WHERE is_active = true
+                      AND (
+                            TRIM(COALESCE(overview, '')) <> ''
+                            OR TRIM(COALESCE(homepage, '')) <> ''
+                            OR TRIM(COALESCE(description, '')) <> ''
+                            OR (
+                                TRIM(COALESCE(description_source, '')) <> ''
+                                AND description_source <> 'DETAIL_COMMON_EMPTY'
+                            )
+                            OR (
+                                TRIM(COALESCE(main_info_json, '')) <> ''
+                                AND TRIM(main_info_json) <> '[]'
+                            )
+                            OR detail_source_updated_at IS NOT NULL
+                      )
+                    """,
+            nativeQuery = true
+    )
     long countDetailSyncedContents();
 
     @Query("""
-            select max(f.lastSyncedAt)
-            from FestivalContent f
+            select max(content.lastSyncedAt)
+            from FestivalContent content
             """)
     LocalDateTime findLatestSyncedAt();
 
     @Query("""
-            select coalesce(f.contentTypeId, 'UNKNOWN'), count(f)
-            from FestivalContent f
-            where f.active = true
-            group by coalesce(f.contentTypeId, 'UNKNOWN')
-            order by coalesce(f.contentTypeId, 'UNKNOWN')
+            select content.contentTypeId, count(content)
+            from FestivalContent content
+            where content.active = true
+            group by content.contentTypeId
             """)
     List<Object[]> countActiveContentsByContentTypeId();
 
     @Query("""
-            select coalesce(f.category, 'UNKNOWN'), count(f)
-            from FestivalContent f
-            where f.active = true
-            group by coalesce(f.category, 'UNKNOWN')
-            order by coalesce(f.category, 'UNKNOWN')
+            select content.category, count(content)
+            from FestivalContent content
+            where content.active = true
+            group by content.category
             """)
     List<Object[]> countActiveContentsByCategory();
 }

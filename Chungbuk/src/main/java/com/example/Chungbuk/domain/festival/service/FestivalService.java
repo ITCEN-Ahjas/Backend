@@ -1,7 +1,5 @@
 package com.example.Chungbuk.domain.festival.service;
 
-import com.example.Chungbuk.domain.festival.client.TourApiClient;
-import com.example.Chungbuk.domain.festival.constant.ChungbukRegion;
 import com.example.Chungbuk.domain.festival.constant.SupportedContentType;
 import com.example.Chungbuk.domain.festival.dto.response.ContentInfoResponse;
 import com.example.Chungbuk.domain.festival.dto.response.ExperienceListResponse;
@@ -29,16 +27,18 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class FestivalService {
 
-    private final TourApiClient tourApiClient;
-    private final FestivalContentRepository festivalContentRepository;
-
-    private final ObjectMapper objectMapper = new ObjectMapper();
-
     private static final int DEFAULT_PAGE = 1;
     private static final int DEFAULT_SIZE = 10;
     private static final int MAX_SIZE = 100;
+
     private static final String FESTIVAL_CONTENT_TYPE_ID = "15";
-    private static final DateTimeFormatter TOUR_API_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd");
+
+    private static final DateTimeFormatter TOUR_API_DATE_FORMAT =
+            DateTimeFormatter.ofPattern("yyyyMMdd");
+
+    private final FestivalContentRepository festivalContentRepository;
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Transactional(readOnly = true)
     public FestivalListResponse getFestivals(
@@ -70,13 +70,68 @@ public class FestivalService {
                 )
         );
 
-        Page<FestivalContent> result = festivalContentRepository.findAll(specification, pageRequest);
+        Page<FestivalContent> result = festivalContentRepository.findAll(
+                specification,
+                pageRequest
+        );
 
         List<FestivalSummaryResponse> items = result.getContent().stream()
                 .map(this::toFestivalSummaryResponse)
                 .toList();
 
         return FestivalListResponse.builder()
+                .items(items)
+                .page(validPage)
+                .size(validSize)
+                .totalCount(toIntTotalCount(result.getTotalElements()))
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    public ExperienceListResponse getExperiences(
+            int page,
+            int size,
+            String region,
+            String contentTypeId,
+            String category,
+            String keyword
+    ) {
+        int validPage = normalizePage(page);
+        int validSize = normalizeSize(size);
+
+        String resolvedContentTypeId = resolveExperienceContentTypeId(
+                contentTypeId,
+                category
+        );
+
+        Specification<FestivalContent> specification = alwaysTrue()
+                .and(activeOnly())
+                .and(experienceContentType(resolvedContentTypeId))
+                .and(regionEquals(region))
+                .and(categoryEquals(category))
+                .and(keywordContains(keyword));
+
+        PageRequest pageRequest = PageRequest.of(
+                validPage - 1,
+                validSize,
+                Sort.by(
+                        Sort.Order.asc("category"),
+                        Sort.Order.asc("region"),
+                        Sort.Order.asc("title"),
+                        Sort.Order.desc("id")
+                )
+        );
+
+        Page<FestivalContent> result = festivalContentRepository.findAll(
+                specification,
+                pageRequest
+        );
+
+        List<ExperienceSummaryResponse> items = result.getContent().stream()
+                .map(this::toExperienceSummaryResponse)
+                .toList();
+
+        return ExperienceListResponse.builder()
                 .items(items)
                 .page(validPage)
                 .size(validSize)
@@ -93,74 +148,9 @@ public class FestivalService {
                 .orElseGet(() -> emptyFestivalDetailResponse(validContentId));
     }
 
-    @Transactional(readOnly = true)
-    public ExperienceListResponse getExperiences(
-            int page,
-            int size,
-            String region,
-            String contentTypeId,
-            String category,
-            String keyword
+    private FestivalSummaryResponse toFestivalSummaryResponse(
+            FestivalContent content
     ) {
-        int validPage = normalizePage(page);
-        int validSize = normalizeSize(size);
-        String resolvedContentTypeId = resolveExperienceContentTypeId(contentTypeId, category);
-
-        Specification<FestivalContent> specification = alwaysTrue()
-                .and(activeOnly())
-                .and(experienceContentType(resolvedContentTypeId))
-                .and(regionEquals(region))
-                .and(categoryEquals(category))
-                .and(keywordContains(keyword));
-
-        PageRequest pageRequest = PageRequest.of(
-                validPage - 1,
-                validSize,
-                Sort.by(
-                        Sort.Order.asc("category"),
-                        Sort.Order.asc("region"),
-                        Sort.Order.desc("id")
-                )
-        );
-
-        Page<FestivalContent> result = festivalContentRepository.findAll(specification, pageRequest);
-
-        List<ExperienceSummaryResponse> items = result.getContent().stream()
-                .map(this::toExperienceSummaryResponse)
-                .toList();
-
-        return ExperienceListResponse.builder()
-                .items(items)
-                .page(validPage)
-                .size(validSize)
-                .totalCount(toIntTotalCount(result.getTotalElements()))
-                .build();
-    }
-
-    /*
-     * raw API는 아직 TourAPI 원본 응답 확인용으로 유지한다.
-     * 최종 캐시/Swagger 정리 커밋에서 유지 여부를 다시 결정한다.
-     */
-    public String getFestivalRaw(
-            int page,
-            int size,
-            String eventStartDate,
-            String region
-    ) {
-        int validPage = normalizePage(page);
-        int validSize = normalizeSize(size);
-        String validEventStartDate = normalizeEventStartDate(eventStartDate);
-        String sigunguCode = resolveSigunguCode(region);
-
-        return tourApiClient.getFestivalListRaw(
-                validPage,
-                validSize,
-                validEventStartDate,
-                sigunguCode
-        );
-    }
-
-    private FestivalSummaryResponse toFestivalSummaryResponse(FestivalContent content) {
         return FestivalSummaryResponse.builder()
                 .id(safe(content.getContentId()))
                 .contentTypeId(safe(content.getContentTypeId()))
@@ -183,10 +173,13 @@ public class FestivalService {
                 .timeValue(safe(content.getTimeValue()))
                 .extraLabel(safe(content.getExtraLabel()))
                 .extraValue(safe(content.getExtraValue()))
+                .modifiedTime(formatSourceUpdatedAt(content.getSourceUpdatedAt()))
                 .build();
     }
 
-    private ExperienceSummaryResponse toExperienceSummaryResponse(FestivalContent content) {
+    private ExperienceSummaryResponse toExperienceSummaryResponse(
+            FestivalContent content
+    ) {
         return ExperienceSummaryResponse.builder()
                 .id(safe(content.getContentId()))
                 .contentTypeId(safe(content.getContentTypeId()))
@@ -206,12 +199,21 @@ public class FestivalService {
                 .timeValue(safe(content.getTimeValue()))
                 .extraLabel(safe(content.getExtraLabel()))
                 .extraValue(safe(content.getExtraValue()))
+                .modifiedTime(formatSourceUpdatedAt(content.getSourceUpdatedAt()))
                 .build();
     }
 
-    private FestivalDetailResponse toFestivalDetailResponse(FestivalContent content) {
-        List<String> imageUrls = parseImageUrls(content.getImageUrlsJson(), content.getImageUrl());
-        List<ContentInfoResponse> mainInfo = parseMainInfo(content.getMainInfoJson());
+    private FestivalDetailResponse toFestivalDetailResponse(
+            FestivalContent content
+    ) {
+        List<String> imageUrls = parseImageUrls(
+                content.getImageUrlsJson(),
+                content.getImageUrl()
+        );
+
+        List<ContentInfoResponse> mainInfo = parseMainInfo(
+                content.getMainInfoJson()
+        );
 
         if (mainInfo.isEmpty()) {
             mainInfo = buildFallbackMainInfo(content);
@@ -252,7 +254,9 @@ public class FestivalService {
                 .build();
     }
 
-    private FestivalDetailResponse emptyFestivalDetailResponse(String contentId) {
+    private FestivalDetailResponse emptyFestivalDetailResponse(
+            String contentId
+    ) {
         return FestivalDetailResponse.builder()
                 .id(safe(contentId))
                 .contentTypeId("")
@@ -288,7 +292,10 @@ public class FestivalService {
                 .build();
     }
 
-    private List<String> parseImageUrls(String imageUrlsJson, String fallbackImageUrl) {
+    private List<String> parseImageUrls(
+            String imageUrlsJson,
+            String fallbackImageUrl
+    ) {
         List<String> imageUrls = new ArrayList<>();
 
         if (hasText(imageUrlsJson)) {
@@ -300,7 +307,7 @@ public class FestivalService {
                         String imageUrl = item.asText("");
 
                         if (hasText(imageUrl)) {
-                            imageUrls.add(imageUrl);
+                            imageUrls.add(imageUrl.trim());
                         }
                     }
                 }
@@ -336,8 +343,8 @@ public class FestivalService {
 
                 if (hasText(label) && hasText(value)) {
                     mainInfo.add(ContentInfoResponse.builder()
-                            .label(label)
-                            .value(value)
+                            .label(label.trim())
+                            .value(value.trim())
                             .build());
                 }
             }
@@ -348,7 +355,9 @@ public class FestivalService {
         return mainInfo;
     }
 
-    private List<ContentInfoResponse> buildFallbackMainInfo(FestivalContent content) {
+    private List<ContentInfoResponse> buildFallbackMainInfo(
+            FestivalContent content
+    ) {
         List<ContentInfoResponse> mainInfo = new ArrayList<>();
 
         addMainInfo(mainInfo, content.getTimeLabel(), content.getTimeValue());
@@ -359,7 +368,11 @@ public class FestivalService {
         return mainInfo;
     }
 
-    private void addMainInfo(List<ContentInfoResponse> mainInfo, String label, String value) {
+    private void addMainInfo(
+            List<ContentInfoResponse> mainInfo,
+            String label,
+            String value
+    ) {
         if (!hasText(label) || !hasText(value)) {
             return;
         }
@@ -375,19 +388,27 @@ public class FestivalService {
     }
 
     private Specification<FestivalContent> activeOnly() {
-        return (root, query, criteriaBuilder) -> criteriaBuilder.isTrue(root.get("active"));
+        return (root, query, criteriaBuilder) ->
+                criteriaBuilder.isTrue(root.get("active"));
     }
 
-    private Specification<FestivalContent> contentTypeEquals(String contentTypeId) {
+    private Specification<FestivalContent> contentTypeEquals(
+            String contentTypeId
+    ) {
         if (!hasText(contentTypeId) || "전체".equals(contentTypeId.trim())) {
             return alwaysTrue();
         }
 
         return (root, query, criteriaBuilder) ->
-                criteriaBuilder.equal(root.get("contentTypeId"), contentTypeId.trim());
+                criteriaBuilder.equal(
+                        root.get("contentTypeId"),
+                        contentTypeId.trim()
+                );
     }
 
-    private Specification<FestivalContent> experienceContentType(String contentTypeId) {
+    private Specification<FestivalContent> experienceContentType(
+            String contentTypeId
+    ) {
         if (hasText(contentTypeId) && !"전체".equals(contentTypeId.trim())) {
             return contentTypeEquals(contentTypeId);
         }
@@ -414,7 +435,9 @@ public class FestivalService {
                 criteriaBuilder.equal(root.get("category"), category.trim());
     }
 
-    private Specification<FestivalContent> eventEndDateAfterOrEquals(String eventStartDate) {
+    private Specification<FestivalContent> eventEndDateAfterOrEquals(
+            String eventStartDate
+    ) {
         if (!hasText(eventStartDate)) {
             return alwaysTrue();
         }
@@ -423,7 +446,10 @@ public class FestivalService {
                 criteriaBuilder.or(
                         criteriaBuilder.isNull(root.get("endDate")),
                         criteriaBuilder.equal(root.get("endDate"), ""),
-                        criteriaBuilder.greaterThanOrEqualTo(root.get("endDate"), eventStartDate.trim())
+                        criteriaBuilder.greaterThanOrEqualTo(
+                                root.get("endDate"),
+                                eventStartDate.trim()
+                        )
                 );
     }
 
@@ -436,17 +462,69 @@ public class FestivalService {
 
         return (root, query, criteriaBuilder) ->
                 criteriaBuilder.or(
-                        criteriaBuilder.like(criteriaBuilder.lower(criteriaBuilder.coalesce(root.get("title"), "")), likeKeyword),
-                        criteriaBuilder.like(criteriaBuilder.lower(criteriaBuilder.coalesce(root.get("region"), "")), likeKeyword),
-                        criteriaBuilder.like(criteriaBuilder.lower(criteriaBuilder.coalesce(root.get("category"), "")), likeKeyword),
-                        criteriaBuilder.like(criteriaBuilder.lower(criteriaBuilder.coalesce(root.get("themeCategory"), "")), likeKeyword),
-                        criteriaBuilder.like(criteriaBuilder.lower(criteriaBuilder.coalesce(root.get("address"), "")), likeKeyword),
-                        criteriaBuilder.like(criteriaBuilder.lower(criteriaBuilder.coalesce(root.get("extraValue"), "")), likeKeyword)
+                        criteriaBuilder.like(
+                                criteriaBuilder.lower(
+                                        criteriaBuilder.coalesce(
+                                                root.get("title"),
+                                                ""
+                                        )
+                                ),
+                                likeKeyword
+                        ),
+                        criteriaBuilder.like(
+                                criteriaBuilder.lower(
+                                        criteriaBuilder.coalesce(
+                                                root.get("region"),
+                                                ""
+                                        )
+                                ),
+                                likeKeyword
+                        ),
+                        criteriaBuilder.like(
+                                criteriaBuilder.lower(
+                                        criteriaBuilder.coalesce(
+                                                root.get("category"),
+                                                ""
+                                        )
+                                ),
+                                likeKeyword
+                        ),
+                        criteriaBuilder.like(
+                                criteriaBuilder.lower(
+                                        criteriaBuilder.coalesce(
+                                                root.get("themeCategory"),
+                                                ""
+                                        )
+                                ),
+                                likeKeyword
+                        ),
+                        criteriaBuilder.like(
+                                criteriaBuilder.lower(
+                                        criteriaBuilder.coalesce(
+                                                root.get("address"),
+                                                ""
+                                        )
+                                ),
+                                likeKeyword
+                        ),
+                        criteriaBuilder.like(
+                                criteriaBuilder.lower(
+                                        criteriaBuilder.coalesce(
+                                                root.get("extraValue"),
+                                                ""
+                                        )
+                                ),
+                                likeKeyword
+                        )
                 );
     }
 
-    private String resolveExperienceContentTypeId(String contentTypeId, String category) {
-        String contentTypeResult = SupportedContentType.resolveExperienceContentTypeId(contentTypeId);
+    private String resolveExperienceContentTypeId(
+            String contentTypeId,
+            String category
+    ) {
+        String contentTypeResult =
+                SupportedContentType.resolveExperienceContentTypeId(contentTypeId);
 
         if (hasText(contentTypeResult)) {
             return contentTypeResult;
@@ -456,11 +534,7 @@ public class FestivalService {
     }
 
     private int normalizePage(int page) {
-        if (page < 1) {
-            return DEFAULT_PAGE;
-        }
-
-        return page;
+        return page < 1 ? DEFAULT_PAGE : page;
     }
 
     private int normalizeSize(int size) {
@@ -468,31 +542,34 @@ public class FestivalService {
             return DEFAULT_SIZE;
         }
 
-        if (size > MAX_SIZE) {
-            return MAX_SIZE;
-        }
-
-        return size;
+        return Math.min(size, MAX_SIZE);
     }
 
     private String normalizeEventStartDate(String eventStartDate) {
-        if (hasText(eventStartDate) && eventStartDate.trim().matches("\\d{8}")) {
+        if (hasText(eventStartDate)
+                && eventStartDate.trim().matches("\\d{8}")) {
             return eventStartDate.trim();
         }
 
         return LocalDate.now().format(TOUR_API_DATE_FORMAT);
     }
 
-    private String resolveSigunguCode(String region) {
-        return ChungbukRegion.findSigunguCodeByName(region);
+    private int toIntTotalCount(long totalCount) {
+        return totalCount > Integer.MAX_VALUE
+                ? Integer.MAX_VALUE
+                : (int) totalCount;
     }
 
-    private int toIntTotalCount(long totalCount) {
-        if (totalCount > Integer.MAX_VALUE) {
-            return Integer.MAX_VALUE;
+    private String formatSourceUpdatedAt(
+            java.time.LocalDateTime sourceUpdatedAt
+    ) {
+        if (sourceUpdatedAt == null) {
+            return "";
         }
 
-        return (int) totalCount;
+        return sourceUpdatedAt.format(
+                DateTimeFormatter.ofPattern("yyyyMMddHHmmss")
+        );
     }
 
     private boolean hasText(String value) {
