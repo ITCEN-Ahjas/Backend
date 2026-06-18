@@ -3,44 +3,44 @@ package com.example.Chungbuk.domain.festival.service;
 import com.example.Chungbuk.domain.festival.client.TourApiClient;
 import com.example.Chungbuk.domain.festival.constant.ChungbukRegion;
 import com.example.Chungbuk.domain.festival.constant.SupportedContentType;
+import com.example.Chungbuk.domain.festival.dto.response.ContentInfoResponse;
 import com.example.Chungbuk.domain.festival.dto.response.ExperienceListResponse;
 import com.example.Chungbuk.domain.festival.dto.response.ExperienceSummaryResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalDetailResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalListResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalSummaryResponse;
-import com.example.Chungbuk.domain.festival.mapper.FestivalMapper;
-import com.example.Chungbuk.global.config.CacheConfig;
+import com.example.Chungbuk.domain.festival.entity.FestivalContent;
+import com.example.Chungbuk.domain.festival.repository.FestivalContentRepository;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
-import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
 public class FestivalService {
 
     private final TourApiClient tourApiClient;
-    private final FestivalMapper festivalMapper;
+    private final FestivalContentRepository festivalContentRepository;
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private static final int DEFAULT_PAGE = 1;
-    private static final int DETAIL_FALLBACK_SIZE = 100;
-    private static final String DEFAULT_FESTIVAL_CONTENT_TYPE_ID = "15";
-    private static final String DETAIL_FALLBACK_EVENT_START_DATE = "20230101";
+    private static final int DEFAULT_SIZE = 10;
+    private static final int MAX_SIZE = 100;
+    private static final String FESTIVAL_CONTENT_TYPE_ID = "15";
     private static final DateTimeFormatter TOUR_API_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
-    @Cacheable(
-            value = CacheConfig.FESTIVAL_LIST_CACHE,
-            key = "'page=' + #page"
-                    + " + ':size=' + #size"
-                    + " + ':eventStartDate=' + (#eventStartDate == null ? '' : #eventStartDate)"
-                    + " + ':region=' + (#region == null ? '' : #region)"
-                    + " + ':category=' + (#category == null ? '' : #category)"
-                    + " + ':keyword=' + (#keyword == null ? '' : #keyword)"
-    )
+    @Transactional(readOnly = true)
     public FestivalListResponse getFestivals(
             int page,
             int size,
@@ -52,90 +52,48 @@ public class FestivalService {
         int validPage = normalizePage(page);
         int validSize = normalizeSize(size);
         String validEventStartDate = normalizeEventStartDate(eventStartDate);
-        String sigunguCode = resolveSigunguCode(region);
 
-        String rawJson = tourApiClient.getFestivalListRaw(
-                validPage,
+        Specification<FestivalContent> specification = alwaysTrue()
+                .and(activeOnly())
+                .and(contentTypeEquals(FESTIVAL_CONTENT_TYPE_ID))
+                .and(eventEndDateAfterOrEquals(validEventStartDate))
+                .and(regionEquals(region))
+                .and(categoryEquals(category))
+                .and(keywordContains(keyword));
+
+        PageRequest pageRequest = PageRequest.of(
+                validPage - 1,
                 validSize,
-                validEventStartDate,
-                sigunguCode
+                Sort.by(
+                        Sort.Order.asc("startDate"),
+                        Sort.Order.desc("id")
+                )
         );
 
-        Map<String, String> detailIntroRawJsonMap = fetchDetailIntroRawJsonMap(
-                festivalMapper.extractIntroRequestTargets(rawJson, DEFAULT_FESTIVAL_CONTENT_TYPE_ID)
-        );
+        Page<FestivalContent> result = festivalContentRepository.findAll(specification, pageRequest);
 
-        FestivalListResponse response = festivalMapper.toFestivalListResponse(
-                rawJson,
-                detailIntroRawJsonMap,
-                validPage,
-                validSize
-        );
-
-        List<FestivalSummaryResponse> filteredItems = response.getItems().stream()
-                .filter(item -> matchesCategory(item.getCategory(), category))
-                .filter(item -> matchesKeywordForFestival(item, keyword))
+        List<FestivalSummaryResponse> items = result.getContent().stream()
+                .map(this::toFestivalSummaryResponse)
                 .toList();
 
         return FestivalListResponse.builder()
-                .items(filteredItems)
+                .items(items)
                 .page(validPage)
                 .size(validSize)
-                .totalCount(filteredItems.size())
+                .totalCount(toIntTotalCount(result.getTotalElements()))
                 .build();
     }
 
-    @Cacheable(
-            value = CacheConfig.FESTIVAL_DETAIL_CACHE,
-            key = "#contentId == null ? '' : #contentId"
-    )
+    @Transactional(readOnly = true)
     public FestivalDetailResponse getFestivalDetail(String contentId) {
         String validContentId = safe(contentId);
 
-        String detailCommonRawJson = tourApiClient.getFestivalDetailCommonRaw(validContentId);
-
-        String fallbackListRawJson = tourApiClient.getFestivalListRaw(
-                DEFAULT_PAGE,
-                DETAIL_FALLBACK_SIZE,
-                DETAIL_FALLBACK_EVENT_START_DATE,
-                null
-        );
-
-        String contentTypeId = firstNonBlank(
-                festivalMapper.extractContentTypeId(detailCommonRawJson),
-                festivalMapper.extractContentTypeIdFromFallback(fallbackListRawJson, validContentId),
-                DEFAULT_FESTIVAL_CONTENT_TYPE_ID
-        );
-
-        if (!SupportedContentType.isSupported(contentTypeId)) {
-            contentTypeId = DEFAULT_FESTIVAL_CONTENT_TYPE_ID;
-        }
-
-        String detailIntroRawJson = tourApiClient.getFestivalDetailIntroRaw(
-                validContentId,
-                contentTypeId
-        );
-
-        String detailImageRawJson = tourApiClient.getFestivalDetailImageRaw(validContentId);
-
-        return festivalMapper.toFestivalDetailResponse(
-                detailCommonRawJson,
-                detailIntroRawJson,
-                detailImageRawJson,
-                fallbackListRawJson,
-                validContentId
-        );
+        return festivalContentRepository.findByContentIdAndActiveTrue(validContentId)
+                .map(this::toFestivalDetailResponse)
+                .orElseGet(() -> emptyFestivalDetailResponse(validContentId));
     }
 
-    @Cacheable(
-            value = CacheConfig.EXPERIENCE_LIST_CACHE,
-            key = "'page=' + #page"
-                    + " + ':size=' + #size"
-                    + " + ':region=' + (#region == null ? '' : #region)"
-                    + " + ':contentTypeId=' + (#contentTypeId == null ? '' : #contentTypeId)"
-                    + " + ':category=' + (#category == null ? '' : #category)"
-                    + " + ':keyword=' + (#keyword == null ? '' : #keyword)"
-    )
+    @Transactional(readOnly = true)
     public ExperienceListResponse getExperiences(
             int page,
             int size,
@@ -146,49 +104,43 @@ public class FestivalService {
     ) {
         int validPage = normalizePage(page);
         int validSize = normalizeSize(size);
-        String sigunguCode = resolveSigunguCode(region);
         String resolvedContentTypeId = resolveExperienceContentTypeId(contentTypeId, category);
 
-        if ("__UNSUPPORTED__".equals(resolvedContentTypeId)) {
-            return ExperienceListResponse.builder()
-                    .items(List.of())
-                    .page(validPage)
-                    .size(validSize)
-                    .totalCount(0)
-                    .build();
-        }
+        Specification<FestivalContent> specification = alwaysTrue()
+                .and(activeOnly())
+                .and(experienceContentType(resolvedContentTypeId))
+                .and(regionEquals(region))
+                .and(categoryEquals(category))
+                .and(keywordContains(keyword));
 
-        String rawJson = tourApiClient.getExperienceListRaw(
-                validPage,
+        PageRequest pageRequest = PageRequest.of(
+                validPage - 1,
                 validSize,
-                sigunguCode,
-                resolvedContentTypeId
+                Sort.by(
+                        Sort.Order.asc("category"),
+                        Sort.Order.asc("region"),
+                        Sort.Order.desc("id")
+                )
         );
 
-        Map<String, String> detailIntroRawJsonMap = fetchDetailIntroRawJsonMap(
-                festivalMapper.extractIntroRequestTargets(rawJson, null)
-        );
+        Page<FestivalContent> result = festivalContentRepository.findAll(specification, pageRequest);
 
-        ExperienceListResponse response = festivalMapper.toExperienceListResponse(
-                rawJson,
-                detailIntroRawJsonMap,
-                validPage,
-                validSize
-        );
-
-        List<ExperienceSummaryResponse> filteredItems = response.getItems().stream()
-                .filter(item -> matchesCategory(item.getCategory(), category))
-                .filter(item -> matchesKeywordForExperience(item, keyword))
+        List<ExperienceSummaryResponse> items = result.getContent().stream()
+                .map(this::toExperienceSummaryResponse)
                 .toList();
 
         return ExperienceListResponse.builder()
-                .items(filteredItems)
+                .items(items)
                 .page(validPage)
                 .size(validSize)
-                .totalCount(filteredItems.size())
+                .totalCount(toIntTotalCount(result.getTotalElements()))
                 .build();
     }
 
+    /*
+     * raw API는 아직 TourAPI 원본 응답 확인용으로 유지한다.
+     * 최종 캐시/Swagger 정리 커밋에서 유지 여부를 다시 결정한다.
+     */
     public String getFestivalRaw(
             int page,
             int size,
@@ -208,32 +160,289 @@ public class FestivalService {
         );
     }
 
-    private Map<String, String> fetchDetailIntroRawJsonMap(
-            List<FestivalMapper.IntroRequestTarget> targets
-    ) {
-        Map<String, String> detailIntroRawJsonMap = new LinkedHashMap<>();
+    private FestivalSummaryResponse toFestivalSummaryResponse(FestivalContent content) {
+        return FestivalSummaryResponse.builder()
+                .id(safe(content.getContentId()))
+                .contentTypeId(safe(content.getContentTypeId()))
+                .cat1(safe(content.getCat1()))
+                .cat2(safe(content.getCat2()))
+                .cat3(safe(content.getCat3()))
+                .title(safe(content.getTitle()))
+                .region(safe(content.getRegion()))
+                .category(safe(content.getCategory()))
+                .themeCategory(safe(content.getThemeCategory()))
+                .status(safe(content.getStatus()))
+                .startDate(safe(content.getStartDate()))
+                .endDate(safe(content.getEndDate()))
+                .address(safe(content.getAddress()))
+                .imageUrl(safe(content.getImageUrl()))
+                .tel(safe(content.getTel()))
+                .mapX(safe(content.getMapX()))
+                .mapY(safe(content.getMapY()))
+                .timeLabel(safe(content.getTimeLabel()))
+                .timeValue(safe(content.getTimeValue()))
+                .extraLabel(safe(content.getExtraLabel()))
+                .extraValue(safe(content.getExtraValue()))
+                .build();
+    }
 
-        for (FestivalMapper.IntroRequestTarget target : targets) {
-            String contentId = target.contentId();
-            String contentTypeId = target.contentTypeId();
+    private ExperienceSummaryResponse toExperienceSummaryResponse(FestivalContent content) {
+        return ExperienceSummaryResponse.builder()
+                .id(safe(content.getContentId()))
+                .contentTypeId(safe(content.getContentTypeId()))
+                .cat1(safe(content.getCat1()))
+                .cat2(safe(content.getCat2()))
+                .cat3(safe(content.getCat3()))
+                .title(safe(content.getTitle()))
+                .region(safe(content.getRegion()))
+                .category(safe(content.getCategory()))
+                .themeCategory(safe(content.getThemeCategory()))
+                .address(safe(content.getAddress()))
+                .imageUrl(safe(content.getImageUrl()))
+                .tel(safe(content.getTel()))
+                .mapX(safe(content.getMapX()))
+                .mapY(safe(content.getMapY()))
+                .timeLabel(safe(content.getTimeLabel()))
+                .timeValue(safe(content.getTimeValue()))
+                .extraLabel(safe(content.getExtraLabel()))
+                .extraValue(safe(content.getExtraValue()))
+                .build();
+    }
 
-            if (!hasText(contentId) || !SupportedContentType.isSupported(contentTypeId)) {
-                continue;
-            }
+    private FestivalDetailResponse toFestivalDetailResponse(FestivalContent content) {
+        List<String> imageUrls = parseImageUrls(content.getImageUrlsJson(), content.getImageUrl());
+        List<ContentInfoResponse> mainInfo = parseMainInfo(content.getMainInfoJson());
 
+        if (mainInfo.isEmpty()) {
+            mainInfo = buildFallbackMainInfo(content);
+        }
+
+        return FestivalDetailResponse.builder()
+                .id(safe(content.getContentId()))
+                .contentTypeId(safe(content.getContentTypeId()))
+                .cat1(safe(content.getCat1()))
+                .cat2(safe(content.getCat2()))
+                .cat3(safe(content.getCat3()))
+                .title(safe(content.getTitle()))
+                .region(safe(content.getRegion()))
+                .category(safe(content.getCategory()))
+                .themeCategory(safe(content.getThemeCategory()))
+                .status(safe(content.getStatus()))
+                .startDate(safe(content.getStartDate()))
+                .endDate(safe(content.getEndDate()))
+                .address(safe(content.getAddress()))
+                .imageUrl(safe(content.getImageUrl()))
+                .imageUrls(imageUrls)
+                .tel(safe(content.getTel()))
+                .homepage(safe(content.getHomepage()))
+                .overview(safe(content.getOverview()))
+                .description(safe(content.getDescription()))
+                .descriptionSource(safe(content.getDescriptionSource()))
+                .mapX(safe(content.getMapX()))
+                .mapY(safe(content.getMapY()))
+                .eventPlace(safe(content.getEventPlace()))
+                .playTime(safe(content.getPlayTime()))
+                .useTimeFestival(safe(content.getUseTimeFestival()))
+                .sponsor(safe(content.getSponsor()))
+                .timeLabel(safe(content.getTimeLabel()))
+                .timeValue(safe(content.getTimeValue()))
+                .extraLabel(safe(content.getExtraLabel()))
+                .extraValue(safe(content.getExtraValue()))
+                .mainInfo(mainInfo)
+                .build();
+    }
+
+    private FestivalDetailResponse emptyFestivalDetailResponse(String contentId) {
+        return FestivalDetailResponse.builder()
+                .id(safe(contentId))
+                .contentTypeId("")
+                .cat1("")
+                .cat2("")
+                .cat3("")
+                .title("")
+                .region("")
+                .category("")
+                .themeCategory("")
+                .status("")
+                .startDate("")
+                .endDate("")
+                .address("")
+                .imageUrl("")
+                .imageUrls(List.of())
+                .tel("")
+                .homepage("")
+                .overview("")
+                .description("")
+                .descriptionSource("")
+                .mapX("")
+                .mapY("")
+                .eventPlace("")
+                .playTime("")
+                .useTimeFestival("")
+                .sponsor("")
+                .timeLabel("")
+                .timeValue("")
+                .extraLabel("")
+                .extraValue("")
+                .mainInfo(List.of())
+                .build();
+    }
+
+    private List<String> parseImageUrls(String imageUrlsJson, String fallbackImageUrl) {
+        List<String> imageUrls = new ArrayList<>();
+
+        if (hasText(imageUrlsJson)) {
             try {
-                String detailIntroRawJson = tourApiClient.getFestivalDetailIntroRaw(
-                        contentId,
-                        contentTypeId
-                );
+                JsonNode root = objectMapper.readTree(imageUrlsJson);
 
-                detailIntroRawJsonMap.put(contentId, detailIntroRawJson);
+                if (root.isArray()) {
+                    for (JsonNode item : root) {
+                        String imageUrl = item.asText("");
+
+                        if (hasText(imageUrl)) {
+                            imageUrls.add(imageUrl);
+                        }
+                    }
+                }
             } catch (Exception ignored) {
-                detailIntroRawJsonMap.put(contentId, "");
+                imageUrls.clear();
             }
         }
 
-        return detailIntroRawJsonMap;
+        if (imageUrls.isEmpty() && hasText(fallbackImageUrl)) {
+            imageUrls.add(fallbackImageUrl.trim());
+        }
+
+        return imageUrls;
+    }
+
+    private List<ContentInfoResponse> parseMainInfo(String mainInfoJson) {
+        List<ContentInfoResponse> mainInfo = new ArrayList<>();
+
+        if (!hasText(mainInfoJson)) {
+            return mainInfo;
+        }
+
+        try {
+            JsonNode root = objectMapper.readTree(mainInfoJson);
+
+            if (!root.isArray()) {
+                return mainInfo;
+            }
+
+            for (JsonNode item : root) {
+                String label = item.path("label").asText("");
+                String value = item.path("value").asText("");
+
+                if (hasText(label) && hasText(value)) {
+                    mainInfo.add(ContentInfoResponse.builder()
+                            .label(label)
+                            .value(value)
+                            .build());
+                }
+            }
+        } catch (Exception ignored) {
+            mainInfo.clear();
+        }
+
+        return mainInfo;
+    }
+
+    private List<ContentInfoResponse> buildFallbackMainInfo(FestivalContent content) {
+        List<ContentInfoResponse> mainInfo = new ArrayList<>();
+
+        addMainInfo(mainInfo, content.getTimeLabel(), content.getTimeValue());
+        addMainInfo(mainInfo, content.getExtraLabel(), content.getExtraValue());
+        addMainInfo(mainInfo, "주소", content.getAddress());
+        addMainInfo(mainInfo, "문의", content.getTel());
+
+        return mainInfo;
+    }
+
+    private void addMainInfo(List<ContentInfoResponse> mainInfo, String label, String value) {
+        if (!hasText(label) || !hasText(value)) {
+            return;
+        }
+
+        mainInfo.add(ContentInfoResponse.builder()
+                .label(label.trim())
+                .value(value.trim())
+                .build());
+    }
+
+    private Specification<FestivalContent> alwaysTrue() {
+        return (root, query, criteriaBuilder) -> criteriaBuilder.conjunction();
+    }
+
+    private Specification<FestivalContent> activeOnly() {
+        return (root, query, criteriaBuilder) -> criteriaBuilder.isTrue(root.get("active"));
+    }
+
+    private Specification<FestivalContent> contentTypeEquals(String contentTypeId) {
+        if (!hasText(contentTypeId) || "전체".equals(contentTypeId.trim())) {
+            return alwaysTrue();
+        }
+
+        return (root, query, criteriaBuilder) ->
+                criteriaBuilder.equal(root.get("contentTypeId"), contentTypeId.trim());
+    }
+
+    private Specification<FestivalContent> experienceContentType(String contentTypeId) {
+        if (hasText(contentTypeId) && !"전체".equals(contentTypeId.trim())) {
+            return contentTypeEquals(contentTypeId);
+        }
+
+        return (root, query, criteriaBuilder) ->
+                root.get("contentTypeId").in(List.of("12", "14", "28"));
+    }
+
+    private Specification<FestivalContent> regionEquals(String region) {
+        if (!hasText(region) || "전체".equals(region.trim())) {
+            return alwaysTrue();
+        }
+
+        return (root, query, criteriaBuilder) ->
+                criteriaBuilder.equal(root.get("region"), region.trim());
+    }
+
+    private Specification<FestivalContent> categoryEquals(String category) {
+        if (!hasText(category) || "전체".equals(category.trim())) {
+            return alwaysTrue();
+        }
+
+        return (root, query, criteriaBuilder) ->
+                criteriaBuilder.equal(root.get("category"), category.trim());
+    }
+
+    private Specification<FestivalContent> eventEndDateAfterOrEquals(String eventStartDate) {
+        if (!hasText(eventStartDate)) {
+            return alwaysTrue();
+        }
+
+        return (root, query, criteriaBuilder) ->
+                criteriaBuilder.or(
+                        criteriaBuilder.isNull(root.get("endDate")),
+                        criteriaBuilder.equal(root.get("endDate"), ""),
+                        criteriaBuilder.greaterThanOrEqualTo(root.get("endDate"), eventStartDate.trim())
+                );
+    }
+
+    private Specification<FestivalContent> keywordContains(String keyword) {
+        if (!hasText(keyword)) {
+            return alwaysTrue();
+        }
+
+        String likeKeyword = "%" + keyword.trim().toLowerCase() + "%";
+
+        return (root, query, criteriaBuilder) ->
+                criteriaBuilder.or(
+                        criteriaBuilder.like(criteriaBuilder.lower(criteriaBuilder.coalesce(root.get("title"), "")), likeKeyword),
+                        criteriaBuilder.like(criteriaBuilder.lower(criteriaBuilder.coalesce(root.get("region"), "")), likeKeyword),
+                        criteriaBuilder.like(criteriaBuilder.lower(criteriaBuilder.coalesce(root.get("category"), "")), likeKeyword),
+                        criteriaBuilder.like(criteriaBuilder.lower(criteriaBuilder.coalesce(root.get("themeCategory"), "")), likeKeyword),
+                        criteriaBuilder.like(criteriaBuilder.lower(criteriaBuilder.coalesce(root.get("address"), "")), likeKeyword),
+                        criteriaBuilder.like(criteriaBuilder.lower(criteriaBuilder.coalesce(root.get("extraValue"), "")), likeKeyword)
+                );
     }
 
     private String resolveExperienceContentTypeId(String contentTypeId, String category) {
@@ -246,52 +455,6 @@ public class FestivalService {
         return SupportedContentType.resolveExperienceContentTypeId(category);
     }
 
-    private boolean matchesCategory(String itemCategory, String requestedCategory) {
-        if (!hasText(requestedCategory) || "전체".equals(requestedCategory.trim())) {
-            return true;
-        }
-
-        return requestedCategory.trim().equals(itemCategory);
-    }
-
-    private boolean matchesKeywordForFestival(FestivalSummaryResponse item, String keyword) {
-        if (!hasText(keyword)) {
-            return true;
-        }
-
-        String normalizedKeyword = normalizeForSearch(keyword);
-
-        String searchTarget = normalizeForSearch(
-                item.getTitle() + " "
-                        + item.getRegion() + " "
-                        + item.getCategory() + " "
-                        + item.getThemeCategory() + " "
-                        + item.getAddress() + " "
-                        + item.getExtraValue()
-        );
-
-        return searchTarget.contains(normalizedKeyword);
-    }
-
-    private boolean matchesKeywordForExperience(ExperienceSummaryResponse item, String keyword) {
-        if (!hasText(keyword)) {
-            return true;
-        }
-
-        String normalizedKeyword = normalizeForSearch(keyword);
-
-        String searchTarget = normalizeForSearch(
-                item.getTitle() + " "
-                        + item.getRegion() + " "
-                        + item.getCategory() + " "
-                        + item.getThemeCategory() + " "
-                        + item.getAddress() + " "
-                        + item.getExtraValue()
-        );
-
-        return searchTarget.contains(normalizedKeyword);
-    }
-
     private int normalizePage(int page) {
         if (page < 1) {
             return DEFAULT_PAGE;
@@ -302,11 +465,11 @@ public class FestivalService {
 
     private int normalizeSize(int size) {
         if (size < 1) {
-            return 10;
+            return DEFAULT_SIZE;
         }
 
-        if (size > 100) {
-            return 100;
+        if (size > MAX_SIZE) {
+            return MAX_SIZE;
         }
 
         return size;
@@ -324,24 +487,12 @@ public class FestivalService {
         return ChungbukRegion.findSigunguCodeByName(region);
     }
 
-    private String firstNonBlank(String... values) {
-        if (values == null) {
-            return "";
+    private int toIntTotalCount(long totalCount) {
+        if (totalCount > Integer.MAX_VALUE) {
+            return Integer.MAX_VALUE;
         }
 
-        for (String value : values) {
-            if (hasText(value)) {
-                return value.trim();
-            }
-        }
-
-        return "";
-    }
-
-    private String normalizeForSearch(String value) {
-        return safe(value)
-                .replace(" ", "")
-                .toLowerCase();
+        return (int) totalCount;
     }
 
     private boolean hasText(String value) {

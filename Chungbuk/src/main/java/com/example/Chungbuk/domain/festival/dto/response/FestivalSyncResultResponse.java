@@ -1,0 +1,30 @@
+package com.example.Chungbuk.domain.festival.dto.response;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+
+@Getter
+@Builder
+@AllArgsConstructor
+public class FestivalSyncResultResponse {
+
+    private int festivalSavedCount;
+    private int experienceSavedCount;
+    private int detailSyncedCount;
+
+    private int insertedCount;
+    private int updatedCount;
+
+    private int tourApiCallCount;
+    private int skippedDetailCount;
+
+    private int festivalPage;
+    private int festivalSize;
+    private int experiencePage;
+    private int experienceSize;
+
+    private boolean includeDetail;
+    private String eventStartDate;
+    private String message;
+}
