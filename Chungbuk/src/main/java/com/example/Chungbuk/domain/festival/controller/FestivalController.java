@@ -3,9 +3,11 @@ package com.example.Chungbuk.domain.festival.controller;
 import com.example.Chungbuk.domain.festival.dto.response.ExperienceListResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalDetailResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalListResponse;
+import com.example.Chungbuk.domain.festival.dto.response.FestivalSyncMetadataInitializationResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalSyncResultResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalSyncStatusResponse;
 import com.example.Chungbuk.domain.festival.service.FestivalService;
+import com.example.Chungbuk.domain.festival.service.FestivalSyncMetadataService;
 import com.example.Chungbuk.domain.festival.service.FestivalSyncService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -28,6 +30,7 @@ public class FestivalController {
 
     private final FestivalService festivalService;
     private final FestivalSyncService festivalSyncService;
+    private final FestivalSyncMetadataService festivalSyncMetadataService;
 
     @Operation(summary = "축제·공연·행사 목록 조회")
     @GetMapping
@@ -75,6 +78,23 @@ public class FestivalController {
             @PathVariable String contentId
     ) {
         return festivalService.getFestivalDetail(contentId);
+    }
+
+    @Operation(
+            summary = "기존 콘텐츠 동기화 상태값 초기화",
+            description = """
+                    현재 DB에 저장된 상세 정보와 이미지 데이터를 기준으로
+                    detail_source_updated_at, image_sync_completed 상태값을 초기화합니다.
+
+                    TourAPI 목록·상세·이미지 API를 호출하지 않으며,
+                    기존 festival_contents 데이터는 삭제하거나 새로 수집하지 않습니다.
+                    """
+    )
+    @PostMapping("/sync/metadata/initialize")
+    public FestivalSyncMetadataInitializationResponse
+    initializeLegacySyncMetadata() {
+        return festivalSyncMetadataService
+                .initializeLegacySyncMetadata();
     }
 
     @Operation(
