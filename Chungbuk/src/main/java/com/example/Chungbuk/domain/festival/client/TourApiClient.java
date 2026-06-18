@@ -1,5 +1,6 @@
 package com.example.Chungbuk.domain.festival.client;
 
+import com.example.Chungbuk.domain.festival.service.TourApiQuotaService;
 import com.example.Chungbuk.global.config.TourApiProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -17,6 +18,7 @@ public class TourApiClient {
 
     private final RestTemplate restTemplate;
     private final TourApiProperties tourApiProperties;
+    private final TourApiQuotaService tourApiQuotaService;
 
     public String getFestivalListRaw(
             int page,
@@ -24,7 +26,11 @@ public class TourApiClient {
             String eventStartDate,
             String sigunguCode
     ) {
-        UriComponentsBuilder uriBuilder = createBaseUriBuilder("/searchFestival2")
+        reserveTourApiCall();
+
+        UriComponentsBuilder uriBuilder = createBaseUriBuilder(
+                "/searchFestival2"
+        )
                 .queryParam("numOfRows", size)
                 .queryParam("pageNo", page)
                 .queryParam("arrange", "O")
@@ -47,7 +53,11 @@ public class TourApiClient {
             String sigunguCode,
             String contentTypeId
     ) {
-        UriComponentsBuilder uriBuilder = createBaseUriBuilder("/areaBasedList2")
+        reserveTourApiCall();
+
+        UriComponentsBuilder uriBuilder = createBaseUriBuilder(
+                "/areaBasedList2"
+        )
                 .queryParam("numOfRows", size)
                 .queryParam("pageNo", page)
                 .queryParam("arrange", "O")
@@ -68,7 +78,11 @@ public class TourApiClient {
     }
 
     public String getFestivalDetailCommonRaw(String contentId) {
-        UriComponentsBuilder uriBuilder = createBaseUriBuilder("/detailCommon2")
+        reserveTourApiCall();
+
+        UriComponentsBuilder uriBuilder = createBaseUriBuilder(
+                "/detailCommon2"
+        )
                 .queryParam("contentId", contentId)
                 .queryParam("numOfRows", 1)
                 .queryParam("pageNo", 1);
@@ -83,7 +97,11 @@ public class TourApiClient {
             String contentId,
             String contentTypeId
     ) {
-        UriComponentsBuilder uriBuilder = createBaseUriBuilder("/detailIntro2")
+        reserveTourApiCall();
+
+        UriComponentsBuilder uriBuilder = createBaseUriBuilder(
+                "/detailIntro2"
+        )
                 .queryParam("contentId", contentId)
                 .queryParam("contentTypeId", contentTypeId)
                 .queryParam("numOfRows", 1)
@@ -96,7 +114,11 @@ public class TourApiClient {
     }
 
     public String getFestivalDetailImageRaw(String contentId) {
-        UriComponentsBuilder uriBuilder = createBaseUriBuilder("/detailImage2")
+        reserveTourApiCall();
+
+        UriComponentsBuilder uriBuilder = createBaseUriBuilder(
+                "/detailImage2"
+        )
                 .queryParam("contentId", contentId)
                 .queryParam("imageYN", "Y")
                 .queryParam("subImageYN", "Y")
@@ -109,6 +131,10 @@ public class TourApiClient {
         );
     }
 
+    private void reserveTourApiCall() {
+        tourApiQuotaService.reserveCallOrThrow();
+    }
+
     private UriComponentsBuilder createBaseUriBuilder(String path) {
         String baseUrl = tourApiProperties.getBaseUrl();
 
@@ -117,7 +143,10 @@ public class TourApiClient {
         }
 
         return UriComponentsBuilder.fromUriString(baseUrl + path)
-                .queryParam("serviceKey", tourApiProperties.getServiceKey())
+                .queryParam(
+                        "serviceKey",
+                        tourApiProperties.getServiceKey()
+                )
                 .queryParam("MobileOS", DEFAULT_MOBILE_OS)
                 .queryParam("MobileApp", DEFAULT_MOBILE_APP)
                 .queryParam("_type", RESPONSE_TYPE_JSON);
