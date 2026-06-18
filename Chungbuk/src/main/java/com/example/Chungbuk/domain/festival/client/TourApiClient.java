@@ -116,12 +116,18 @@ public class TourApiClient {
     public String getFestivalDetailImageRaw(String contentId) {
         reserveTourApiCall();
 
+        /*
+         * subImageYN 파라미터는 현재 detailImage2 요청에서
+         * INVALID_REQUEST_PARAMETER_ERROR를 발생시키므로 제거한다.
+         *
+         * 이미지가 실제로 없는 콘텐츠는 정상 응답(resultCode=0000)과
+         * 빈 items 목록을 반환하며, 이는 실패가 아니라 이미지 없음 상태다.
+         */
         UriComponentsBuilder uriBuilder = createBaseUriBuilder(
                 "/detailImage2"
         )
                 .queryParam("contentId", contentId)
                 .queryParam("imageYN", "Y")
-                .queryParam("subImageYN", "Y")
                 .queryParam("numOfRows", 10)
                 .queryParam("pageNo", 1);
 
