@@ -110,8 +110,8 @@ public class FestivalController {
             summary = "축제/체험 목록 데이터 수동 동기화",
             description = """
                     TourAPI 목록 데이터를 festival_contents 테이블에 저장하거나 갱신합니다.
-                    기본값은 목록 데이터 중심 동기화이며, TourAPI 트래픽 제한을 고려하여 상세 데이터는 단건 상세 동기화 API로 보강하는 것을 권장합니다.
                     한 번의 요청에서 축제 1페이지와 체험/관광 1페이지만 동기화합니다.
+                    전체 데이터를 자동으로 채우려면 POST /api/festivals/sync/all 사용을 권장합니다.
                     """
     )
     @PostMapping("/sync")
@@ -136,13 +136,9 @@ public class FestivalController {
     @Operation(
             summary = "축제/체험 목록 데이터 범위 동기화",
             description = """
-                    TourAPI 목록 데이터를 여러 페이지 범위로 반복 조회하여 festival_contents 테이블에 저장하거나 갱신합니다.
+                    사용자가 지정한 페이지 범위만큼 TourAPI 목록 데이터를 반복 조회하여 festival_contents 테이블에 저장하거나 갱신합니다.
                     프론트엔드 첫 렌더링에서 호출하는 API가 아니라, 관리자 또는 개발자가 DB 데이터를 채우기 위해 사용하는 백엔드 데이터 관리용 API입니다.
-                    기본값은 목록 데이터 중심 동기화이며, TourAPI 호출량을 줄이기 위해 includeDetail=false 사용을 권장합니다.
-                    상세 데이터는 필요한 contentId만 단건 상세 동기화 API로 보강하는 것을 권장합니다.
-                    
-                    예시:
-                    POST /api/festivals/sync/bulk?festivalStartPage=1&festivalEndPage=3&festivalSize=30&experienceStartPage=1&experienceEndPage=3&experienceSize=30&eventStartDate=20230101&includeDetail=false
+                    page 범위를 직접 지정하지 않고 전체 페이지를 자동 계산하려면 POST /api/festivals/sync/all 사용을 권장합니다.
                     """
     )
     @PostMapping("/sync/bulk")
@@ -165,6 +161,35 @@ public class FestivalController {
                 experienceSize,
                 eventStartDate,
                 includeDetail
+        );
+    }
+
+    @Operation(
+            summary = "축제/체험 전체 자동 동기화",
+            description = """
+                    TourAPI totalCount를 기준으로 전체 페이지 수를 자동 계산한 뒤 축제, 관광지, 문화시설, 레포츠 데이터를 DB에 저장하거나 갱신합니다.
+                    사용자가 festivalEndPage, experienceEndPage를 직접 계산하지 않아도 됩니다.
+                    기본적으로 목록 데이터를 먼저 채우고, includeDetail=true인 경우 detailLimit 개수만큼 상세 데이터도 자동 보강합니다.
+                    TourAPI 호출 제한을 고려하여 maxPages와 detailLimit을 함께 사용합니다.
+                    
+                    예시:
+                    POST /api/festivals/sync/all?size=30&maxPages=20&eventStartDate=20230101&includeDetail=true&detailLimit=30
+                    """
+    )
+    @PostMapping("/sync/all")
+    public FestivalSyncResultResponse syncFestivalContentsAll(
+            @RequestParam(defaultValue = "30") int size,
+            @RequestParam(defaultValue = "20") int maxPages,
+            @RequestParam(required = false) String eventStartDate,
+            @RequestParam(defaultValue = "false") boolean includeDetail,
+            @RequestParam(defaultValue = "30") int detailLimit
+    ) {
+        return festivalSyncService.syncFestivalContentsAll(
+                size,
+                maxPages,
+                eventStartDate,
+                includeDetail,
+                detailLimit
         );
     }
 

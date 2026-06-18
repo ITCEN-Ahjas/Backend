@@ -29,7 +29,12 @@ public class FestivalSyncResultResponse {
     private int experienceStartPage;
     private int experienceEndPage;
 
+    private int maxPages;
+    private int detailLimit;
+
     private boolean includeDetail;
+    private boolean automaticSync;
+
     private String eventStartDate;
     private String message;
 }
