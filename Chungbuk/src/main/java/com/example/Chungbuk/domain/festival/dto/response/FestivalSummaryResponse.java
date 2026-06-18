@@ -37,4 +37,6 @@ public class FestivalSummaryResponse {
     private String timeValue;
     private String extraLabel;
     private String extraValue;
+
+    private String modifiedTime;
 }

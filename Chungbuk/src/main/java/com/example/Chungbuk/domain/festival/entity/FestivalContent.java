@@ -41,20 +41,9 @@ public class FestivalContent {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /*
-     * TourAPI 콘텐츠 ID.
-     * DB 내부 PK와 별도로 외부 공공데이터 식별자로 사용한다.
-     */
     @Column(name = "content_id", nullable = false, unique = true, length = 50)
     private String contentId;
 
-    /*
-     * TourAPI 콘텐츠 타입.
-     * 12: 관광지
-     * 14: 문화시설
-     * 15: 행사/공연/축제
-     * 28: 레포츠
-     */
     @Column(name = "content_type_id", length = 20)
     private String contentTypeId;
 
@@ -73,27 +62,15 @@ public class FestivalContent {
     @Column(name = "region", length = 50)
     private String region;
 
-    /*
-     * 메인 카테고리.
-     * 예: 관광지, 문화시설, 행사, 공연, 축제, 레포츠
-     */
     @Column(name = "category", length = 50)
     private String category;
 
-    /*
-     * 보조 테마 카테고리.
-     * 예: 먹거리, 야간행사, 자연관광, 역사문화, 캠핑 등
-     */
     @Column(name = "theme_category", length = 80)
     private String themeCategory;
 
     @Column(name = "status", length = 30)
     private String status;
 
-    /*
-     * TourAPI 날짜 형식 유지.
-     * 예: 20250912
-     */
     @Column(name = "start_date", length = 20)
     private String startDate;
 
@@ -106,10 +83,6 @@ public class FestivalContent {
     @Column(name = "image_url", length = 1000)
     private String imageUrl;
 
-    /*
-     * 상세 이미지 목록은 JSON 문자열로 저장한다.
-     * 예: ["url1", "url2"]
-     */
     @Lob
     @Column(name = "image_urls_json", columnDefinition = "TEXT")
     private String imageUrlsJson;
@@ -161,32 +134,27 @@ public class FestivalContent {
     @Column(name = "extra_value", length = 500)
     private String extraValue;
 
-    /*
-     * 상세페이지 주요 정보 목록은 JSON 문자열로 저장한다.
-     * 예: [{"label":"축제 기간","value":"2025.09.12 ~ 2025.09.14"}]
-     */
     @Lob
     @Column(name = "main_info_json", columnDefinition = "TEXT")
     private String mainInfoJson;
 
-    /*
-     * 공공데이터에서 일시적으로 누락되거나 삭제된 경우 바로 delete하지 않고 비활성화한다.
-     */
     @Column(name = "is_active", nullable = false)
     private Boolean active;
 
-    /*
-     * 우리 서버가 TourAPI에서 마지막으로 동기화한 시간.
-     */
     @Column(name = "last_synced_at")
     private LocalDateTime lastSyncedAt;
 
-    /*
-     * TourAPI 원본 수정 시간이 제공되는 경우 저장한다.
-     * 원본 수정 시간이 없으면 null로 둔다.
-     */
+    /* TourAPI 목록 응답의 modifiedtime */
     @Column(name = "source_updated_at")
     private LocalDateTime sourceUpdatedAt;
+
+    /* 마지막으로 detailCommon2/detailIntro2까지 성공 저장한 원본 수정 시각 */
+    @Column(name = "detail_source_updated_at")
+    private LocalDateTime detailSourceUpdatedAt;
+
+    /* detailImage2까지 정상 응답을 받아 이미지 목록을 확정했는지 여부 */
+    @Column(name = "image_sync_completed")
+    private Boolean imageSyncCompleted;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -200,6 +168,10 @@ public class FestivalContent {
 
         if (active == null) {
             active = true;
+        }
+
+        if (imageSyncCompleted == null) {
+            imageSyncCompleted = false;
         }
 
         createdAt = now;
@@ -224,7 +196,9 @@ public class FestivalContent {
     }
 
     public void updateSourceUpdatedAt(LocalDateTime sourceUpdatedAt) {
-        this.sourceUpdatedAt = sourceUpdatedAt;
+        if (sourceUpdatedAt != null) {
+            this.sourceUpdatedAt = sourceUpdatedAt;
+        }
     }
 
     public void updateSummaryInfo(
@@ -250,26 +224,112 @@ public class FestivalContent {
             String extraValue,
             LocalDateTime lastSyncedAt
     ) {
-        this.contentTypeId = contentTypeId;
-        this.cat1 = cat1;
-        this.cat2 = cat2;
-        this.cat3 = cat3;
-        this.title = title;
-        this.region = region;
-        this.category = category;
-        this.themeCategory = themeCategory;
-        this.status = status;
-        this.startDate = startDate;
-        this.endDate = endDate;
-        this.address = address;
-        this.imageUrl = imageUrl;
-        this.tel = tel;
-        this.mapX = mapX;
-        this.mapY = mapY;
-        this.timeLabel = timeLabel;
-        this.timeValue = timeValue;
-        this.extraLabel = extraLabel;
-        this.extraValue = extraValue;
+        updateSummaryInfo(
+                contentTypeId,
+                cat1,
+                cat2,
+                cat3,
+                title,
+                region,
+                category,
+                themeCategory,
+                status,
+                startDate,
+                endDate,
+                address,
+                imageUrl,
+                tel,
+                mapX,
+                mapY,
+                timeLabel,
+                timeValue,
+                extraLabel,
+                extraValue,
+                lastSyncedAt,
+                null
+        );
+    }
+
+    public void updateSummaryInfo(
+            String contentTypeId,
+            String cat1,
+            String cat2,
+            String cat3,
+            String title,
+            String region,
+            String category,
+            String themeCategory,
+            String status,
+            String startDate,
+            String endDate,
+            String address,
+            String imageUrl,
+            String tel,
+            String mapX,
+            String mapY,
+            String timeLabel,
+            String timeValue,
+            String extraLabel,
+            String extraValue,
+            LocalDateTime lastSyncedAt,
+            LocalDateTime sourceUpdatedAt
+    ) {
+        this.contentTypeId = chooseContentTypeId(contentTypeId, this.contentTypeId);
+        this.cat1 = chooseText(cat1, this.cat1);
+        this.cat2 = chooseText(cat2, this.cat2);
+        this.cat3 = chooseText(cat3, this.cat3);
+        this.title = chooseText(title, this.title);
+        this.region = chooseText(region, this.region);
+        this.category = chooseText(category, this.category);
+        this.themeCategory = chooseText(themeCategory, this.themeCategory);
+        this.status = chooseText(status, this.status);
+        this.startDate = chooseText(startDate, this.startDate);
+        this.endDate = chooseText(endDate, this.endDate);
+        this.address = chooseText(address, this.address);
+        this.imageUrl = chooseText(imageUrl, this.imageUrl);
+        this.tel = chooseText(tel, this.tel);
+        this.mapX = chooseText(mapX, this.mapX);
+        this.mapY = chooseText(mapY, this.mapY);
+
+        updateDisplayInfoPreservingUsefulValue(
+                timeLabel,
+                timeValue,
+                extraLabel,
+                extraValue
+        );
+
+        this.lastSyncedAt = lastSyncedAt;
+        updateSourceUpdatedAt(sourceUpdatedAt);
+        this.active = true;
+    }
+
+    public void initializeDailyRefreshBaseline(
+            LocalDateTime sourceUpdatedAt
+    ) {
+        if (hasStoredDetail() && detailSourceUpdatedAt == null
+                && sourceUpdatedAt != null) {
+            detailSourceUpdatedAt = sourceUpdatedAt;
+        }
+
+        if (hasStoredDetail() && imageSyncCompleted == null) {
+            imageSyncCompleted = true;
+        }
+    }
+
+    public void updateCardInfo(
+            String timeLabel,
+            String timeValue,
+            String extraLabel,
+            String extraValue,
+            LocalDateTime lastSyncedAt
+    ) {
+        replaceDisplayInfo(
+                timeLabel,
+                timeValue,
+                extraLabel,
+                extraValue
+        );
+
         this.lastSyncedAt = lastSyncedAt;
         this.active = true;
     }
@@ -308,38 +368,171 @@ public class FestivalContent {
             LocalDateTime lastSyncedAt,
             LocalDateTime sourceUpdatedAt
     ) {
-        this.contentTypeId = contentTypeId;
-        this.cat1 = cat1;
-        this.cat2 = cat2;
-        this.cat3 = cat3;
-        this.title = title;
-        this.region = region;
-        this.category = category;
-        this.themeCategory = themeCategory;
-        this.status = status;
-        this.startDate = startDate;
-        this.endDate = endDate;
-        this.address = address;
-        this.imageUrl = imageUrl;
-        this.imageUrlsJson = imageUrlsJson;
-        this.tel = tel;
-        this.homepage = homepage;
-        this.overview = overview;
-        this.description = description;
-        this.descriptionSource = descriptionSource;
-        this.mapX = mapX;
-        this.mapY = mapY;
-        this.eventPlace = eventPlace;
-        this.playTime = playTime;
-        this.useTimeFestival = useTimeFestival;
-        this.sponsor = sponsor;
-        this.timeLabel = timeLabel;
-        this.timeValue = timeValue;
-        this.extraLabel = extraLabel;
-        this.extraValue = extraValue;
-        this.mainInfoJson = mainInfoJson;
+        updateDetailInfo(
+                contentTypeId,
+                cat1,
+                cat2,
+                cat3,
+                title,
+                region,
+                category,
+                themeCategory,
+                status,
+                startDate,
+                endDate,
+                address,
+                imageUrl,
+                imageUrlsJson,
+                tel,
+                homepage,
+                overview,
+                description,
+                descriptionSource,
+                mapX,
+                mapY,
+                eventPlace,
+                playTime,
+                useTimeFestival,
+                sponsor,
+                timeLabel,
+                timeValue,
+                extraLabel,
+                extraValue,
+                mainInfoJson,
+                lastSyncedAt,
+                sourceUpdatedAt,
+                sourceUpdatedAt,
+                true
+        );
+    }
+
+    public void updateDetailInfo(
+            String contentTypeId,
+            String cat1,
+            String cat2,
+            String cat3,
+            String title,
+            String region,
+            String category,
+            String themeCategory,
+            String status,
+            String startDate,
+            String endDate,
+            String address,
+            String imageUrl,
+            String imageUrlsJson,
+            String tel,
+            String homepage,
+            String overview,
+            String description,
+            String descriptionSource,
+            String mapX,
+            String mapY,
+            String eventPlace,
+            String playTime,
+            String useTimeFestival,
+            String sponsor,
+            String timeLabel,
+            String timeValue,
+            String extraLabel,
+            String extraValue,
+            String mainInfoJson,
+            LocalDateTime lastSyncedAt,
+            LocalDateTime sourceUpdatedAt,
+            LocalDateTime detailSourceUpdatedAt,
+            Boolean imageSyncCompleted
+    ) {
+        boolean incomingTypeMismatch = hasText(this.contentTypeId)
+                && hasText(contentTypeId)
+                && !this.contentTypeId.equals(contentTypeId);
+
+        this.contentTypeId = chooseContentTypeId(contentTypeId, this.contentTypeId);
+
+        if (incomingTypeMismatch) {
+            this.cat1 = chooseText(this.cat1, cat1);
+            this.cat2 = chooseText(this.cat2, cat2);
+            this.cat3 = chooseText(this.cat3, cat3);
+            this.category = chooseText(this.category, category);
+            this.themeCategory = chooseText(this.themeCategory, themeCategory);
+            this.status = chooseText(this.status, status);
+            this.startDate = chooseText(this.startDate, startDate);
+            this.endDate = chooseText(this.endDate, endDate);
+        } else {
+            this.cat1 = chooseText(cat1, this.cat1);
+            this.cat2 = chooseText(cat2, this.cat2);
+            this.cat3 = chooseText(cat3, this.cat3);
+            this.category = chooseText(category, this.category);
+            this.themeCategory = chooseText(themeCategory, this.themeCategory);
+            this.status = chooseText(status, this.status);
+            this.startDate = chooseText(startDate, this.startDate);
+            this.endDate = chooseText(endDate, this.endDate);
+        }
+
+        this.title = chooseText(title, this.title);
+        this.region = chooseText(region, this.region);
+        this.address = chooseText(address, this.address);
+        this.imageUrl = chooseText(imageUrl, this.imageUrl);
+        this.tel = chooseText(tel, this.tel);
+        this.homepage = chooseText(homepage, this.homepage);
+        this.overview = chooseText(overview, this.overview);
+        this.description = chooseText(description, this.description);
+        this.descriptionSource = chooseText(descriptionSource, this.descriptionSource);
+        this.mapX = chooseText(mapX, this.mapX);
+        this.mapY = chooseText(mapY, this.mapY);
+        this.eventPlace = chooseText(eventPlace, this.eventPlace);
+        this.playTime = chooseText(playTime, this.playTime);
+        this.useTimeFestival = chooseText(useTimeFestival, this.useTimeFestival);
+        this.sponsor = chooseText(sponsor, this.sponsor);
+
+        updateDisplayInfoPreservingUsefulValue(
+                timeLabel,
+                timeValue,
+                extraLabel,
+                extraValue
+        );
+
+        this.mainInfoJson = chooseJsonArray(mainInfoJson, this.mainInfoJson);
         this.lastSyncedAt = lastSyncedAt;
-        this.sourceUpdatedAt = sourceUpdatedAt;
+        updateSourceUpdatedAt(sourceUpdatedAt);
+
+        if (detailSourceUpdatedAt != null) {
+            this.detailSourceUpdatedAt = detailSourceUpdatedAt;
+        }
+
+        if (imageSyncCompleted != null) {
+            this.imageSyncCompleted = imageSyncCompleted;
+
+            if (imageSyncCompleted) {
+                this.imageUrlsJson = normalizeJsonArray(imageUrlsJson);
+            }
+        }
+
+        this.active = true;
+    }
+
+    public void updateImageInfo(
+            String imageUrlsJson,
+            LocalDateTime lastSyncedAt
+    ) {
+        this.imageUrlsJson = normalizeJsonArray(imageUrlsJson);
+        this.imageSyncCompleted = true;
+        this.lastSyncedAt = lastSyncedAt;
+        this.active = true;
+    }
+
+    public void markDetailCommonUnavailable(
+            LocalDateTime lastSyncedAt,
+            LocalDateTime sourceUpdatedAt
+    ) {
+        this.descriptionSource = "DETAIL_COMMON_EMPTY";
+        this.lastSyncedAt = lastSyncedAt;
+        updateSourceUpdatedAt(sourceUpdatedAt);
+
+        if (sourceUpdatedAt != null) {
+            this.detailSourceUpdatedAt = sourceUpdatedAt;
+        }
+
+        this.imageSyncCompleted = true;
         this.active = true;
     }
 
@@ -411,5 +604,116 @@ public class FestivalContent {
                 lastSyncedAt,
                 sourceUpdatedAt
         );
+    }
+
+    private boolean hasStoredDetail() {
+        return hasText(overview)
+                || hasText(homepage)
+                || hasText(description)
+                || hasText(descriptionSource)
+                || hasMeaningfulJsonArray(mainInfoJson)
+                || detailSourceUpdatedAt != null;
+    }
+
+    private void updateDisplayInfoPreservingUsefulValue(
+            String newTimeLabel,
+            String newTimeValue,
+            String newExtraLabel,
+            String newExtraValue
+    ) {
+        if (isUsefulDisplayInfo(newTimeLabel, newTimeValue)) {
+            this.timeLabel = newTimeLabel;
+            this.timeValue = newTimeValue;
+        } else if (!isUsefulDisplayInfo(this.timeLabel, this.timeValue)) {
+            this.timeLabel = "";
+            this.timeValue = "";
+        }
+
+        if (isUsefulDisplayInfo(newExtraLabel, newExtraValue)) {
+            this.extraLabel = newExtraLabel;
+            this.extraValue = newExtraValue;
+        } else if (!isUsefulDisplayInfo(this.extraLabel, this.extraValue)) {
+            this.extraLabel = "";
+            this.extraValue = "";
+        }
+    }
+
+    private void replaceDisplayInfo(
+            String newTimeLabel,
+            String newTimeValue,
+            String newExtraLabel,
+            String newExtraValue
+    ) {
+        if (isUsefulDisplayInfo(newTimeLabel, newTimeValue)) {
+            this.timeLabel = newTimeLabel;
+            this.timeValue = newTimeValue;
+        } else {
+            this.timeLabel = "";
+            this.timeValue = "";
+        }
+
+        if (isUsefulDisplayInfo(newExtraLabel, newExtraValue)) {
+            this.extraLabel = newExtraLabel;
+            this.extraValue = newExtraValue;
+        } else {
+            this.extraLabel = "";
+            this.extraValue = "";
+        }
+    }
+
+    private String chooseContentTypeId(String newValue, String currentValue) {
+        if (hasText(currentValue)
+                && hasText(newValue)
+                && "15".equals(newValue)
+                && !"15".equals(currentValue)) {
+            return currentValue;
+        }
+
+        return chooseText(newValue, currentValue);
+    }
+
+    private String chooseText(String newValue, String currentValue) {
+        if (hasText(newValue)) {
+            return newValue;
+        }
+
+        return currentValue;
+    }
+
+    private String chooseJsonArray(String newValue, String currentValue) {
+        if (hasMeaningfulJsonArray(newValue)) {
+            return newValue;
+        }
+
+        return currentValue;
+    }
+
+    private String normalizeJsonArray(String value) {
+        return hasText(value) ? value : "[]";
+    }
+
+    private boolean hasMeaningfulJsonArray(String value) {
+        return hasText(value) && !"[]".equals(value.trim());
+    }
+
+    private boolean isUsefulDisplayInfo(String label, String value) {
+        return hasText(label) && isUsefulText(value);
+    }
+
+    private boolean isUsefulText(String value) {
+        if (!hasText(value)) {
+            return false;
+        }
+
+        String normalized = value.trim();
+
+        return !normalized.equals("정보 없음")
+                && !normalized.equals("상세페이지에서 확인")
+                && !normalized.equals("제공된 상세 설명이 없습니다.")
+                && !normalized.equals("분류");
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }
