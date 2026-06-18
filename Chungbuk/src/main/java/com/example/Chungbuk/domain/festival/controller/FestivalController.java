@@ -110,6 +110,7 @@ public class FestivalController {
             description = """
                     TourAPI 목록 데이터를 festival_contents 테이블에 저장하거나 갱신합니다.
                     기본값은 목록 데이터 중심 동기화이며, TourAPI 트래픽 제한을 고려하여 상세 데이터는 단건 상세 동기화 API로 보강하는 것을 권장합니다.
+                    한 번의 요청에서 축제 1페이지와 체험/관광 1페이지만 동기화합니다.
                     """
     )
     @PostMapping("/sync")
@@ -125,6 +126,41 @@ public class FestivalController {
                 festivalPage,
                 festivalSize,
                 experiencePage,
+                experienceSize,
+                eventStartDate,
+                includeDetail
+        );
+    }
+
+    @Operation(
+            summary = "축제/체험 목록 데이터 범위 동기화",
+            description = """
+                    TourAPI 목록 데이터를 여러 페이지 범위로 반복 조회하여 festival_contents 테이블에 저장하거나 갱신합니다.
+                    프론트엔드 첫 렌더링에서 호출하는 API가 아니라, 관리자 또는 개발자가 DB 데이터를 채우기 위해 사용하는 백엔드 데이터 관리용 API입니다.
+                    기본값은 목록 데이터 중심 동기화이며, TourAPI 호출량을 줄이기 위해 includeDetail=false 사용을 권장합니다.
+                    상세 데이터는 필요한 contentId만 단건 상세 동기화 API로 보강하는 것을 권장합니다.
+                    
+                    예시:
+                    POST /api/festivals/sync/bulk?festivalStartPage=1&festivalEndPage=3&festivalSize=30&experienceStartPage=1&experienceEndPage=3&experienceSize=30&eventStartDate=20230101&includeDetail=false
+                    """
+    )
+    @PostMapping("/sync/bulk")
+    public FestivalSyncResultResponse syncFestivalContentsBulk(
+            @RequestParam(defaultValue = "1") int festivalStartPage,
+            @RequestParam(defaultValue = "1") int festivalEndPage,
+            @RequestParam(defaultValue = "30") int festivalSize,
+            @RequestParam(defaultValue = "1") int experienceStartPage,
+            @RequestParam(defaultValue = "1") int experienceEndPage,
+            @RequestParam(defaultValue = "30") int experienceSize,
+            @RequestParam(required = false) String eventStartDate,
+            @RequestParam(defaultValue = "false") boolean includeDetail
+    ) {
+        return festivalSyncService.syncFestivalContentsBulk(
+                festivalStartPage,
+                festivalEndPage,
+                festivalSize,
+                experienceStartPage,
+                experienceEndPage,
                 experienceSize,
                 eventStartDate,
                 includeDetail

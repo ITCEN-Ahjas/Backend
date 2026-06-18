@@ -15,6 +15,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -59,54 +60,28 @@ public class FestivalSyncService {
         LocalDateTime syncedAt = LocalDateTime.now();
         SyncCounter counter = new SyncCounter();
 
-        String festivalRawJson = tourApiClient.getFestivalListRaw(
+        List<FestivalSummaryResponse> festivalItems = syncFestivalPage(
                 validFestivalPage,
                 validFestivalSize,
                 validEventStartDate,
-                null
-        );
-        counter.increaseTourApiCallCount();
-
-        FestivalListResponse festivalListResponse = festivalMapper.toFestivalListResponse(
-                festivalRawJson,
-                validFestivalPage,
-                validFestivalSize
+                syncedAt,
+                counter
         );
 
-        for (FestivalSummaryResponse item : festivalListResponse.getItems()) {
-            upsertFestivalSummary(item, syncedAt, counter);
-        }
-
-        String experienceRawJson = tourApiClient.getExperienceListRaw(
+        List<ExperienceSummaryResponse> experienceItems = syncExperiencePage(
                 validExperiencePage,
                 validExperienceSize,
-                null,
-                DEFAULT_EXPERIENCE_CONTENT_TYPE_ID
-        );
-        counter.increaseTourApiCallCount();
-
-        ExperienceListResponse experienceListResponse = festivalMapper.toExperienceListResponse(
-                experienceRawJson,
-                validExperiencePage,
-                validExperienceSize
+                syncedAt,
+                counter
         );
 
-        for (ExperienceSummaryResponse item : experienceListResponse.getItems()) {
-            upsertExperienceSummary(item, syncedAt, counter);
-        }
-
-        if (includeDetail) {
-            syncDetailsWithinLimit(
-                    festivalListResponse.getItems(),
-                    experienceListResponse.getItems(),
-                    syncedAt,
-                    counter
-            );
-        } else {
-            counter.addSkippedDetailCount(
-                    festivalListResponse.getItems().size() + experienceListResponse.getItems().size()
-            );
-        }
+        syncDetailIfRequested(
+                festivalItems,
+                experienceItems,
+                includeDetail,
+                syncedAt,
+                counter
+        );
 
         return FestivalSyncResultResponse.builder()
                 .festivalSavedCount(counter.getFestivalSavedCount())
@@ -120,9 +95,97 @@ public class FestivalSyncService {
                 .festivalSize(validFestivalSize)
                 .experiencePage(validExperiencePage)
                 .experienceSize(validExperienceSize)
+                .festivalStartPage(validFestivalPage)
+                .festivalEndPage(validFestivalPage)
+                .experienceStartPage(validExperiencePage)
+                .experienceEndPage(validExperiencePage)
                 .includeDetail(includeDetail)
                 .eventStartDate(validEventStartDate)
                 .message(buildMessage(includeDetail, counter))
+                .build();
+    }
+
+    @Transactional
+    public FestivalSyncResultResponse syncFestivalContentsBulk(
+            int festivalStartPage,
+            int festivalEndPage,
+            int festivalSize,
+            int experienceStartPage,
+            int experienceEndPage,
+            int experienceSize,
+            String eventStartDate,
+            boolean includeDetail
+    ) {
+        int validFestivalStartPage = normalizePage(festivalStartPage);
+        int validFestivalEndPage = normalizeEndPage(festivalEndPage, validFestivalStartPage);
+        int validFestivalSize = normalizeSize(festivalSize);
+
+        int validExperienceStartPage = normalizePage(experienceStartPage);
+        int validExperienceEndPage = normalizeEndPage(experienceEndPage, validExperienceStartPage);
+        int validExperienceSize = normalizeSize(experienceSize);
+
+        String validEventStartDate = normalizeEventStartDate(eventStartDate);
+
+        LocalDateTime syncedAt = LocalDateTime.now();
+        SyncCounter counter = new SyncCounter();
+
+        List<FestivalSummaryResponse> festivalItems = new ArrayList<>();
+        List<ExperienceSummaryResponse> experienceItems = new ArrayList<>();
+
+        for (int page = validFestivalStartPage; page <= validFestivalEndPage; page++) {
+            if (!canCallListApi(counter)) {
+                break;
+            }
+
+            festivalItems.addAll(syncFestivalPage(
+                    page,
+                    validFestivalSize,
+                    validEventStartDate,
+                    syncedAt,
+                    counter
+            ));
+        }
+
+        for (int page = validExperienceStartPage; page <= validExperienceEndPage; page++) {
+            if (!canCallListApi(counter)) {
+                break;
+            }
+
+            experienceItems.addAll(syncExperiencePage(
+                    page,
+                    validExperienceSize,
+                    syncedAt,
+                    counter
+            ));
+        }
+
+        syncDetailIfRequested(
+                festivalItems,
+                experienceItems,
+                includeDetail,
+                syncedAt,
+                counter
+        );
+
+        return FestivalSyncResultResponse.builder()
+                .festivalSavedCount(counter.getFestivalSavedCount())
+                .experienceSavedCount(counter.getExperienceSavedCount())
+                .detailSyncedCount(counter.getDetailSyncedCount())
+                .insertedCount(counter.getInsertedCount())
+                .updatedCount(counter.getUpdatedCount())
+                .tourApiCallCount(counter.getTourApiCallCount())
+                .skippedDetailCount(counter.getSkippedDetailCount())
+                .festivalPage(validFestivalStartPage)
+                .festivalSize(validFestivalSize)
+                .experiencePage(validExperienceStartPage)
+                .experienceSize(validExperienceSize)
+                .festivalStartPage(validFestivalStartPage)
+                .festivalEndPage(validFestivalEndPage)
+                .experienceStartPage(validExperienceStartPage)
+                .experienceEndPage(validExperienceEndPage)
+                .includeDetail(includeDetail)
+                .eventStartDate(validEventStartDate)
+                .message(buildBulkMessage(includeDetail, counter))
                 .build();
     }
 
@@ -145,10 +208,94 @@ public class FestivalSyncService {
                 .festivalSize(0)
                 .experiencePage(0)
                 .experienceSize(0)
+                .festivalStartPage(0)
+                .festivalEndPage(0)
+                .experienceStartPage(0)
+                .experienceEndPage(0)
                 .includeDetail(true)
                 .eventStartDate("")
                 .message("contentId 기준으로 TourAPI 상세 데이터를 DB에 저장/갱신했습니다.")
                 .build();
+    }
+
+    private List<FestivalSummaryResponse> syncFestivalPage(
+            int validFestivalPage,
+            int validFestivalSize,
+            String validEventStartDate,
+            LocalDateTime syncedAt,
+            SyncCounter counter
+    ) {
+        String festivalRawJson = tourApiClient.getFestivalListRaw(
+                validFestivalPage,
+                validFestivalSize,
+                validEventStartDate,
+                null
+        );
+        counter.increaseTourApiCallCount();
+
+        FestivalListResponse festivalListResponse = festivalMapper.toFestivalListResponse(
+                festivalRawJson,
+                validFestivalPage,
+                validFestivalSize
+        );
+
+        List<FestivalSummaryResponse> festivalItems = festivalItemsOrEmpty(festivalListResponse);
+
+        for (FestivalSummaryResponse item : festivalItems) {
+            upsertFestivalSummary(item, syncedAt, counter);
+        }
+
+        return festivalItems;
+    }
+
+    private List<ExperienceSummaryResponse> syncExperiencePage(
+            int validExperiencePage,
+            int validExperienceSize,
+            LocalDateTime syncedAt,
+            SyncCounter counter
+    ) {
+        String experienceRawJson = tourApiClient.getExperienceListRaw(
+                validExperiencePage,
+                validExperienceSize,
+                null,
+                DEFAULT_EXPERIENCE_CONTENT_TYPE_ID
+        );
+        counter.increaseTourApiCallCount();
+
+        ExperienceListResponse experienceListResponse = festivalMapper.toExperienceListResponse(
+                experienceRawJson,
+                validExperiencePage,
+                validExperienceSize
+        );
+
+        List<ExperienceSummaryResponse> experienceItems = experienceItemsOrEmpty(experienceListResponse);
+
+        for (ExperienceSummaryResponse item : experienceItems) {
+            upsertExperienceSummary(item, syncedAt, counter);
+        }
+
+        return experienceItems;
+    }
+
+    private void syncDetailIfRequested(
+            List<FestivalSummaryResponse> festivalItems,
+            List<ExperienceSummaryResponse> experienceItems,
+            boolean includeDetail,
+            LocalDateTime syncedAt,
+            SyncCounter counter
+    ) {
+        if (includeDetail) {
+            syncDetailsWithinLimit(
+                    festivalItems,
+                    experienceItems,
+                    syncedAt,
+                    counter
+            );
+
+            return;
+        }
+
+        counter.addSkippedDetailCount(festivalItems.size() + experienceItems.size());
     }
 
     private void syncDetailsWithinLimit(
@@ -178,6 +325,10 @@ public class FestivalSyncService {
             syncDetail(item.getId(), syncedAt, counter);
             detailSyncCount++;
         }
+    }
+
+    private boolean canCallListApi(SyncCounter counter) {
+        return counter.getTourApiCallCount() + 1 <= MAX_TOUR_API_CALL_COUNT;
     }
 
     private boolean canCallDetailApis(SyncCounter counter) {
@@ -396,6 +547,22 @@ public class FestivalSyncService {
         counter.increaseDetailSyncedCount();
     }
 
+    private List<FestivalSummaryResponse> festivalItemsOrEmpty(FestivalListResponse response) {
+        if (response == null || response.getItems() == null) {
+            return List.of();
+        }
+
+        return response.getItems();
+    }
+
+    private List<ExperienceSummaryResponse> experienceItemsOrEmpty(ExperienceListResponse response) {
+        if (response == null || response.getItems() == null) {
+            return List.of();
+        }
+
+        return response.getItems();
+    }
+
     private String toJson(Object value) {
         if (value == null) {
             return "[]";
@@ -420,12 +587,38 @@ public class FestivalSyncService {
         return "TourAPI 목록 데이터를 DB에 저장/갱신했습니다. 상세 데이터 보강은 contentId 단건 상세 동기화 API에서 수행할 수 있습니다.";
     }
 
+    private String buildBulkMessage(boolean includeDetail, SyncCounter counter) {
+        if (counter.getTourApiCallCount() >= MAX_TOUR_API_CALL_COUNT) {
+            return "TourAPI 목록 데이터를 여러 페이지 범위로 DB에 저장/갱신했습니다. 서버 보호용 TourAPI 호출 제한 기준에 도달하여 일부 페이지 또는 상세 데이터 동기화가 중단될 수 있습니다.";
+        }
+
+        if (includeDetail) {
+            if (counter.getDetailSyncedCount() > 0) {
+                return "TourAPI 목록 데이터를 여러 페이지 범위로 DB에 저장/갱신했습니다. 상세 데이터는 트래픽 제한을 고려하여 일부만 보강했습니다.";
+            }
+
+            return "TourAPI 목록 데이터를 여러 페이지 범위로 DB에 저장/갱신했습니다. 상세 보강 대상이 없거나 제한 조건으로 인해 상세 데이터는 저장되지 않았습니다.";
+        }
+
+        return "TourAPI 목록 데이터를 여러 페이지 범위로 DB에 저장/갱신했습니다. 상세 데이터 보강은 contentId 단건 상세 동기화 API에서 수행할 수 있습니다.";
+    }
+
     private int normalizePage(int page) {
         if (page < 1) {
             return DEFAULT_PAGE;
         }
 
         return page;
+    }
+
+    private int normalizeEndPage(int endPage, int startPage) {
+        int validEndPage = normalizePage(endPage);
+
+        if (validEndPage < startPage) {
+            return startPage;
+        }
+
+        return validEndPage;
     }
 
     private int normalizeSize(int size) {

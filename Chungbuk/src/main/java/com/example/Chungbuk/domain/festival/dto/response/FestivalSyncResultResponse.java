@@ -24,6 +24,11 @@ public class FestivalSyncResultResponse {
     private int experiencePage;
     private int experienceSize;
 
+    private int festivalStartPage;
+    private int festivalEndPage;
+    private int experienceStartPage;
+    private int experienceEndPage;
+
     private boolean includeDetail;
     private String eventStartDate;
     private String message;
