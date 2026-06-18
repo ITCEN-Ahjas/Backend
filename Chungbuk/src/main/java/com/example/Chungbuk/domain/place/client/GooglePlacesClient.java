@@ -2,12 +2,14 @@ package com.example.Chungbuk.domain.place.client;
 
 import com.example.Chungbuk.domain.place.dto.google.request.GooglePlacesTextSearchRequest;
 import com.example.Chungbuk.domain.place.dto.google.response.GooglePlacesTextSearchResponse;
+import com.example.Chungbuk.global.exception.GooglePlacesApiException;
 import com.example.Chungbuk.global.config.GooglePlacesProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 @Component
@@ -29,11 +31,15 @@ public class GooglePlacesClient {
 
         HttpEntity<GooglePlacesTextSearchRequest> httpEntity = new HttpEntity<>(request, headers);
 
-        return restTemplate.postForObject(
-                createTextSearchUrl(),
-                httpEntity,
-                GooglePlacesTextSearchResponse.class
-        );
+        try {
+            return restTemplate.postForObject(
+                    createTextSearchUrl(),
+                    httpEntity,
+                    GooglePlacesTextSearchResponse.class
+            );
+        } catch (RestClientException exception) {
+            throw new GooglePlacesApiException("Google Places API 요청에 실패했습니다.", exception);
+        }
     }
 
     private String createTextSearchUrl() {
