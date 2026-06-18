@@ -107,7 +107,7 @@ public class FestivalContent {
     private String imageUrl;
 
     /*
-     * 상세 이미지 목록은 다음 커밋에서 JSON 문자열로 저장한다.
+     * 상세 이미지 목록은 JSON 문자열로 저장한다.
      * 예: ["url1", "url2"]
      */
     @Lob
@@ -162,7 +162,7 @@ public class FestivalContent {
     private String extraValue;
 
     /*
-     * 상세페이지 주요 정보 목록은 다음 커밋에서 JSON 문자열로 저장한다.
+     * 상세페이지 주요 정보 목록은 JSON 문자열로 저장한다.
      * 예: [{"label":"축제 기간","value":"2025.09.12 ~ 2025.09.14"}]
      */
     @Lob
@@ -227,7 +227,54 @@ public class FestivalContent {
         this.sourceUpdatedAt = sourceUpdatedAt;
     }
 
-    public void updateContent(
+    public void updateSummaryInfo(
+            String contentTypeId,
+            String cat1,
+            String cat2,
+            String cat3,
+            String title,
+            String region,
+            String category,
+            String themeCategory,
+            String status,
+            String startDate,
+            String endDate,
+            String address,
+            String imageUrl,
+            String tel,
+            String mapX,
+            String mapY,
+            String timeLabel,
+            String timeValue,
+            String extraLabel,
+            String extraValue,
+            LocalDateTime lastSyncedAt
+    ) {
+        this.contentTypeId = contentTypeId;
+        this.cat1 = cat1;
+        this.cat2 = cat2;
+        this.cat3 = cat3;
+        this.title = title;
+        this.region = region;
+        this.category = category;
+        this.themeCategory = themeCategory;
+        this.status = status;
+        this.startDate = startDate;
+        this.endDate = endDate;
+        this.address = address;
+        this.imageUrl = imageUrl;
+        this.tel = tel;
+        this.mapX = mapX;
+        this.mapY = mapY;
+        this.timeLabel = timeLabel;
+        this.timeValue = timeValue;
+        this.extraLabel = extraLabel;
+        this.extraValue = extraValue;
+        this.lastSyncedAt = lastSyncedAt;
+        this.active = true;
+    }
+
+    public void updateDetailInfo(
             String contentTypeId,
             String cat1,
             String cat2,
@@ -294,5 +341,75 @@ public class FestivalContent {
         this.lastSyncedAt = lastSyncedAt;
         this.sourceUpdatedAt = sourceUpdatedAt;
         this.active = true;
+    }
+
+    public void updateContent(
+            String contentTypeId,
+            String cat1,
+            String cat2,
+            String cat3,
+            String title,
+            String region,
+            String category,
+            String themeCategory,
+            String status,
+            String startDate,
+            String endDate,
+            String address,
+            String imageUrl,
+            String imageUrlsJson,
+            String tel,
+            String homepage,
+            String overview,
+            String description,
+            String descriptionSource,
+            String mapX,
+            String mapY,
+            String eventPlace,
+            String playTime,
+            String useTimeFestival,
+            String sponsor,
+            String timeLabel,
+            String timeValue,
+            String extraLabel,
+            String extraValue,
+            String mainInfoJson,
+            LocalDateTime lastSyncedAt,
+            LocalDateTime sourceUpdatedAt
+    ) {
+        updateDetailInfo(
+                contentTypeId,
+                cat1,
+                cat2,
+                cat3,
+                title,
+                region,
+                category,
+                themeCategory,
+                status,
+                startDate,
+                endDate,
+                address,
+                imageUrl,
+                imageUrlsJson,
+                tel,
+                homepage,
+                overview,
+                description,
+                descriptionSource,
+                mapX,
+                mapY,
+                eventPlace,
+                playTime,
+                useTimeFestival,
+                sponsor,
+                timeLabel,
+                timeValue,
+                extraLabel,
+                extraValue,
+                mainInfoJson,
+                lastSyncedAt,
+                sourceUpdatedAt
+        );
     }
 }
