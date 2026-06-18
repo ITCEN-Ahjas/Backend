@@ -4,6 +4,7 @@ import com.example.Chungbuk.domain.festival.dto.response.ExperienceListResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalDetailResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalListResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalSyncResultResponse;
+import com.example.Chungbuk.domain.festival.dto.response.FestivalSyncStatusResponse;
 import com.example.Chungbuk.domain.festival.service.FestivalService;
 import com.example.Chungbuk.domain.festival.service.FestivalSyncService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -165,6 +166,19 @@ public class FestivalController {
                 eventStartDate,
                 includeDetail
         );
+    }
+
+    @Operation(
+            summary = "축제/체험 DB 동기화 상태 조회",
+            description = """
+                    festival_contents 테이블에 저장된 축제/체험 데이터 상태를 조회합니다.
+                    전체 저장 개수, 콘텐츠 타입별 개수, 카테고리별 개수, 상세 데이터 보강 개수, 마지막 동기화 시간을 확인할 수 있습니다.
+                    프론트 화면에 데이터가 적게 보일 때 DB에 실제로 얼마나 저장되어 있는지 확인하는 용도로 사용할 수 있습니다.
+                    """
+    )
+    @GetMapping("/sync/status")
+    public FestivalSyncStatusResponse getFestivalSyncStatus() {
+        return festivalSyncService.getFestivalSyncStatus();
     }
 
     @Operation(

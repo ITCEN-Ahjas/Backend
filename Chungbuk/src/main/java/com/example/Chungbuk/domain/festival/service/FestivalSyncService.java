@@ -7,6 +7,7 @@ import com.example.Chungbuk.domain.festival.dto.response.FestivalDetailResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalListResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalSummaryResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalSyncResultResponse;
+import com.example.Chungbuk.domain.festival.dto.response.FestivalSyncStatusResponse;
 import com.example.Chungbuk.domain.festival.entity.FestivalContent;
 import com.example.Chungbuk.domain.festival.mapper.FestivalMapper;
 import com.example.Chungbuk.domain.festival.repository.FestivalContentRepository;
@@ -16,7 +17,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,6 +44,40 @@ public class FestivalSyncService {
     private static final String DEFAULT_EXPERIENCE_CONTENT_TYPE_ID = "";
     private static final String DETAIL_FALLBACK_EVENT_START_DATE = "20230101";
     private static final DateTimeFormatter TOUR_API_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd");
+
+    @Transactional(readOnly = true)
+    public FestivalSyncStatusResponse getFestivalSyncStatus() {
+        long totalCount = festivalContentRepository.countByActiveTrue();
+
+        long festivalCount = festivalContentRepository.countByContentTypeIdAndActiveTrue("15");
+        long touristSpotCount = festivalContentRepository.countByContentTypeIdAndActiveTrue("12");
+        long cultureCount = festivalContentRepository.countByContentTypeIdAndActiveTrue("14");
+        long leportsCount = festivalContentRepository.countByContentTypeIdAndActiveTrue("28");
+
+        long detailSyncedCount = festivalContentRepository.countDetailSyncedContents();
+        LocalDateTime lastSyncedAt = festivalContentRepository.findLatestSyncedAt();
+
+        Map<String, Long> contentTypeCounts = toCountMap(
+                festivalContentRepository.countActiveContentsByContentTypeId()
+        );
+
+        Map<String, Long> categoryCounts = toCountMap(
+                festivalContentRepository.countActiveContentsByCategory()
+        );
+
+        return FestivalSyncStatusResponse.builder()
+                .totalCount(totalCount)
+                .festivalCount(festivalCount)
+                .touristSpotCount(touristSpotCount)
+                .cultureCount(cultureCount)
+                .leportsCount(leportsCount)
+                .detailSyncedCount(detailSyncedCount)
+                .lastSyncedAt(lastSyncedAt)
+                .empty(totalCount == 0)
+                .contentTypeCounts(contentTypeCounts)
+                .categoryCounts(categoryCounts)
+                .build();
+    }
 
     @Transactional
     public FestivalSyncResultResponse syncFestivalContents(
@@ -561,6 +598,53 @@ public class FestivalSyncService {
         }
 
         return response.getItems();
+    }
+
+    private Map<String, Long> toCountMap(List<Object[]> rows) {
+        Map<String, Long> result = new LinkedHashMap<>();
+
+        if (rows == null) {
+            return result;
+        }
+
+        for (Object[] row : rows) {
+            if (row == null || row.length < 2) {
+                continue;
+            }
+
+            String key = normalizeMapKey(row[0]);
+            long count = normalizeCount(row[1]);
+
+            result.put(key, count);
+        }
+
+        return result;
+    }
+
+    private String normalizeMapKey(Object value) {
+        if (value == null) {
+            return "UNKNOWN";
+        }
+
+        String text = String.valueOf(value).trim();
+
+        if (!hasText(text)) {
+            return "UNKNOWN";
+        }
+
+        return text;
+    }
+
+    private long normalizeCount(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+
+        try {
+            return Long.parseLong(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            return 0L;
+        }
     }
 
     private String toJson(Object value) {
