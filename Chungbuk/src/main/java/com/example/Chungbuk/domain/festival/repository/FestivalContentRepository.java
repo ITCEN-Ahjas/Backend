@@ -13,6 +13,8 @@ public interface FestivalContentRepository extends
 
     Optional<FestivalContent> findByContentId(String contentId);
 
+    Optional<FestivalContent> findByContentIdAndActiveTrue(String contentId);
+
     boolean existsByContentId(String contentId);
 
     List<FestivalContent> findAllByContentIdIn(Collection<String> contentIds);
