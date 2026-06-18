@@ -17,6 +17,7 @@ public class GooglePlacesTextSearchRequest {
     private String languageCode;
     private String regionCode;
     private Integer pageSize;
+    private String pageToken;
     private LocationRestriction locationRestriction;
 
     @Getter
