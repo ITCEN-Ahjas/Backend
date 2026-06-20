@@ -3,7 +3,9 @@ package com.example.Chungbuk.domain.festival.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
+import com.example.Chungbuk.domain.festival.constant.FestivalInitialSyncPhase;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalSyncStatusResponse;
+import com.example.Chungbuk.domain.festival.entity.FestivalInitialSyncState;
 import com.example.Chungbuk.domain.festival.repository.FestivalContentRepository;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -19,6 +21,10 @@ class FestivalSyncStatusServiceTest {
     @Mock
     private FestivalContentRepository festivalContentRepository;
 
+    @Mock
+    private FestivalInitialSyncStateService
+            festivalInitialSyncStateService;
+
     @InjectMocks
     private FestivalSyncStatusService festivalSyncStatusService;
 
@@ -32,6 +38,24 @@ class FestivalSyncStatusServiceTest {
                 16,
                 0
         );
+
+        FestivalInitialSyncState initialSyncState =
+                FestivalInitialSyncState.createInitial();
+
+        initialSyncState.updateProgress(
+                FestivalInitialSyncPhase.READY,
+                true,
+                true,
+                true,
+                854L,
+                854L,
+                854L,
+                0L,
+                0L
+        );
+
+        when(festivalInitialSyncStateService.getCurrentState())
+                .thenReturn(initialSyncState);
 
         when(festivalContentRepository.countByActiveTrue())
                 .thenReturn(854L);
@@ -126,6 +150,13 @@ class FestivalSyncStatusServiceTest {
         assertThat(response.getImageStateUnknownCount()).isZero();
         assertThat(response.getRetryScheduledCount()).isZero();
         assertThat(response.getRetryFailureCount()).isZero();
+
+        assertThat(response.getInitialSyncPhase())
+                .isEqualTo(FestivalInitialSyncPhase.READY);
+
+        assertThat(response.isInitialListCompleted()).isTrue();
+        assertThat(response.isInitialDetailCompleted()).isTrue();
+        assertThat(response.isInitialImageCompleted()).isTrue();
 
         assertThat(response.isEmpty()).isFalse();
         assertThat(response.getLastSyncedAt()).isEqualTo(lastSyncedAt);
