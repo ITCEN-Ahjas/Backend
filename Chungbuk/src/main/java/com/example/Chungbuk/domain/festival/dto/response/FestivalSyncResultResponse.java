@@ -49,6 +49,12 @@ public class FestivalSyncResultResponse {
     private boolean deactivateMissing;
     private boolean sequential;
 
+    /*
+     * 목록 API가 모든 페이지와 totalCount를 확인한 뒤 정상 완료되었는지 여부입니다.
+     * 초기 적재 LIST_SYNCING 단계는 true일 때만 다음 DETAIL_SYNCING 단계로 이동합니다.
+     */
+    private boolean listSyncCompleted;
+
     private String eventStartDate;
     private String message;
 

@@ -177,6 +177,30 @@ public class FestivalSyncService {
     }
 
     /*
+     * 초기 적재 1단계: 목록만 저장한다.
+     * 목록 수집이 완전하게 끝나기 전에는 기존 콘텐츠를 비활성화하지 않는다.
+     */
+    public FestivalSyncResultResponse syncInitialLists(
+            int size,
+            int maxPages,
+            int maxApiCalls
+    ) {
+        return runListRefresh(
+                new SyncRequest(
+                        normalizeSize(size),
+                        normalizeMaxPages(maxPages),
+                        DEFAULT_EVENT_START_DATE,
+                        false,
+                        0,
+                        normalizeMaxApiCalls(maxApiCalls),
+                        false,
+                        false,
+                        false
+                )
+        );
+    }
+
+    /*
      * 수동 refresh.
      * Scheduler와 같은 변경 감지·안전 비활성화 흐름을 사용한다.
      */
@@ -309,6 +333,49 @@ public class FestivalSyncService {
             int maxApiCalls,
             boolean onlyMissing
     ) {
+        return runStoredDetailSync(
+                normalizeDetailLimit(limit),
+                normalizeMaxApiCalls(maxApiCalls),
+                onlyMissing
+                        ? StoredDetailTargetMode.PENDING
+                        : StoredDetailTargetMode.ALL
+        );
+    }
+
+    /*
+     * 초기 적재 2단계: 상세 소개·홈페이지·유형별 주요 정보만 저장한다.
+     * 상세 이미지 확인은 IMAGE_SYNCING 단계에서 별도로 처리한다.
+     */
+    public FestivalSyncResultResponse syncInitialDetails(
+            int limit,
+            int maxApiCalls
+    ) {
+        return runStoredDetailSync(
+                normalizeDetailLimit(limit),
+                normalizeMaxApiCalls(maxApiCalls),
+                StoredDetailTargetMode.INITIAL_DETAIL_ONLY
+        );
+    }
+
+    /*
+     * 초기 적재 3단계: 상세 완료 콘텐츠 중 이미지 확인이 끝나지 않은 대상만 처리한다.
+     */
+    public FestivalSyncResultResponse syncInitialImages(
+            int limit,
+            int maxApiCalls
+    ) {
+        return runStoredDetailSync(
+                normalizeDetailLimit(limit),
+                normalizeMaxApiCalls(maxApiCalls),
+                StoredDetailTargetMode.INITIAL_IMAGE_ONLY
+        );
+    }
+
+    private FestivalSyncResultResponse runStoredDetailSync(
+            int limit,
+            int maxApiCalls,
+            StoredDetailTargetMode targetMode
+    ) {
         if (!syncRunning.compareAndSet(false, true)) {
             return emptySyncResponse(
                     "축제·체험 동기화가 이미 실행 중입니다. "
@@ -325,14 +392,14 @@ public class FestivalSyncService {
 
             addStoredDetailTargets(
                     groupWorkMap,
-                    onlyMissing,
-                    normalizeDetailLimit(limit),
+                    targetMode,
+                    limit,
                     syncedAt
             );
 
             processDetailTasksRoundRobin(
                     groupWorkMap,
-                    normalizeMaxApiCalls(maxApiCalls),
+                    maxApiCalls,
                     syncedAt,
                     counter
             );
@@ -348,11 +415,12 @@ public class FestivalSyncService {
                     0,
                     0,
                     0,
-                    normalizeDetailLimit(limit),
+                    limit,
                     true,
                     false,
                     false,
                     true,
+                    false,
                     "",
                     buildDetailOnlyMessage(counter),
                     buildGroupResults(groupWorkMap)
@@ -435,6 +503,7 @@ public class FestivalSyncService {
                     false,
                     false,
                     true,
+                    false,
                     "",
                     buildDetailOnlyMessage(counter),
                     buildGroupResults(groupWorkMap)
@@ -618,6 +687,7 @@ public class FestivalSyncService {
                     request.automatic(),
                     deactivationApplied,
                     true,
+                    allListsSafe,
                     request.eventStartDate(),
                     buildRefreshMessage(
                             request,
@@ -1085,7 +1155,7 @@ public class FestivalSyncService {
 
     private void addStoredDetailTargets(
             Map<FestivalSyncGroup, GroupSyncWork> groupWorkMap,
-            boolean onlyMissing,
+            StoredDetailTargetMode targetMode,
             int limit,
             LocalDateTime now
     ) {
@@ -1101,24 +1171,11 @@ public class FestivalSyncService {
                 break;
             }
 
-            DetailTask task;
-
-            if (!onlyMissing) {
-                task = new DetailTask(
-                        content.getContentId(),
-                        content.getContentTypeId(),
-                        content.getSourceUpdatedAt(),
-                        DetailTaskType.FULL
-                );
-            } else {
-                task = createDetailTask(
-                        content,
-                        true,
-                        false,
-                        content.getSourceUpdatedAt(),
-                        now
-                );
-            }
+            DetailTask task = createStoredDetailTask(
+                    content,
+                    targetMode,
+                    now
+            );
 
             if (task == null) {
                 continue;
@@ -1129,6 +1186,58 @@ public class FestivalSyncService {
 
             addedCount++;
         }
+    }
+
+    private DetailTask createStoredDetailTask(
+            FestivalContent content,
+            StoredDetailTargetMode targetMode,
+            LocalDateTime now
+    ) {
+        if (content == null || !hasText(content.getContentId())) {
+            return null;
+        }
+
+        if (targetMode == StoredDetailTargetMode.ALL) {
+            return new DetailTask(
+                    content.getContentId(),
+                    content.getContentTypeId(),
+                    content.getSourceUpdatedAt(),
+                    DetailTaskType.FULL
+            );
+        }
+
+        DetailTask pendingTask = createDetailTask(
+                content,
+                true,
+                false,
+                content.getSourceUpdatedAt(),
+                now
+        );
+
+        if (pendingTask == null) {
+            return null;
+        }
+
+        if (targetMode == StoredDetailTargetMode.PENDING) {
+            return pendingTask;
+        }
+
+        if (targetMode == StoredDetailTargetMode.INITIAL_DETAIL_ONLY
+                && pendingTask.type() == DetailTaskType.FULL) {
+            return new DetailTask(
+                    pendingTask.contentId(),
+                    pendingTask.contentTypeId(),
+                    pendingTask.sourceUpdatedAt(),
+                    DetailTaskType.DETAIL_ONLY
+            );
+        }
+
+        if (targetMode == StoredDetailTargetMode.INITIAL_IMAGE_ONLY
+                && pendingTask.type() == DetailTaskType.IMAGE_ONLY) {
+            return pendingTask;
+        }
+
+        return null;
     }
 
     private void processDetailTasksRoundRobin(
@@ -1352,12 +1461,13 @@ public class FestivalSyncService {
             return DetailSyncOutcome.FAILURE;
         }
 
-        ApiResponse imageResponse = requestDetailImageRaw(
-                task.contentId(),
-                counter
-        );
+        boolean imageRequested = task.type() != DetailTaskType.DETAIL_ONLY;
 
-        boolean imageSynced = imageResponse.success();
+        ApiResponse imageResponse = imageRequested
+                ? requestDetailImageRaw(task.contentId(), counter)
+                : ApiResponse.success("");
+
+        boolean imageSynced = imageRequested && imageResponse.success();
 
         boolean hasIntroItem = festivalMapper.hasDetailItem(
                 introResponse.rawJson()
@@ -1391,12 +1501,13 @@ public class FestivalSyncService {
         saveDetail(
                 detailResponse,
                 task.sourceUpdatedAt(),
+                imageRequested,
                 imageSynced,
                 syncedAt,
                 counter
         );
 
-        if (!imageSynced) {
+        if (imageRequested && !imageSynced) {
             return DetailSyncOutcome.PARTIAL;
         }
 
@@ -1473,6 +1584,7 @@ public class FestivalSyncService {
     private void saveDetail(
             FestivalDetailResponse detail,
             LocalDateTime sourceUpdatedAt,
+            boolean imageRequested,
             boolean imageSynced,
             LocalDateTime syncedAt,
             SyncCounter counter
@@ -1533,9 +1645,9 @@ public class FestivalSyncService {
                     imageSynced
             );
 
-            if (imageSynced) {
+            if (imageRequested && imageSynced) {
                 content.clearDetailRetry();
-            } else {
+            } else if (imageRequested) {
                 content.recordDetailRetry(
                         FestivalDetailRetryReason
                                 .DETAIL_IMAGE_REQUEST_FAILED,
@@ -2041,6 +2153,7 @@ public class FestivalSyncService {
             boolean automaticSync,
             boolean deactivateMissing,
             boolean sequential,
+            boolean listSyncCompleted,
             String eventStartDate,
             String message,
             List<FestivalSyncGroupResultResponse> groupResults
@@ -2073,6 +2186,7 @@ public class FestivalSyncService {
                 .automaticSync(automaticSync)
                 .deactivateMissing(deactivateMissing)
                 .sequential(sequential)
+                .listSyncCompleted(listSyncCompleted)
                 .eventStartDate(eventStartDate)
                 .message(message)
                 .quotaUsageDate(quotaSnapshot.usageDate())
@@ -2105,6 +2219,7 @@ public class FestivalSyncService {
                 0,
                 0,
                 0,
+                false,
                 false,
                 false,
                 false,
@@ -2389,6 +2504,7 @@ public class FestivalSyncService {
 
     private enum DetailTaskType {
         FULL(3),
+        DETAIL_ONLY(2),
         IMAGE_ONLY(1);
 
         private final int requiredApiCalls;
@@ -2400,6 +2516,13 @@ public class FestivalSyncService {
         public int requiredApiCalls() {
             return requiredApiCalls;
         }
+    }
+
+    private enum StoredDetailTargetMode {
+        ALL,
+        PENDING,
+        INITIAL_DETAIL_ONLY,
+        INITIAL_IMAGE_ONLY
     }
 
     private enum DetailSyncOutcome {
