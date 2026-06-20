@@ -1,6 +1,7 @@
 package com.example.Chungbuk.domain.festival.service;
 
 import com.example.Chungbuk.domain.festival.dto.response.FestivalSyncStatusResponse;
+import com.example.Chungbuk.domain.festival.entity.FestivalInitialSyncState;
 import com.example.Chungbuk.domain.festival.repository.FestivalContentRepository;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -15,8 +16,14 @@ public class FestivalSyncStatusService {
 
     private final FestivalContentRepository festivalContentRepository;
 
-    @Transactional(readOnly = true)
+    private final FestivalInitialSyncStateService
+            festivalInitialSyncStateService;
+
+    @Transactional
     public FestivalSyncStatusResponse getFestivalSyncStatus() {
+        FestivalInitialSyncState initialSyncState =
+                festivalInitialSyncStateService.getCurrentState();
+
         long totalCount = festivalContentRepository.countByActiveTrue();
 
         return FestivalSyncStatusResponse.builder()
@@ -44,7 +51,7 @@ public class FestivalSyncStatusService {
                 .lastSyncedAt(
                         festivalContentRepository.findLatestSyncedAt()
                 )
-                .empty(totalCount == 0)
+                .empty(totalCount == 0L)
                 .contentTypeCounts(toCountMap(
                         festivalContentRepository
                                 .countActiveContentsByContentTypeId()
@@ -84,6 +91,31 @@ public class FestivalSyncStatusService {
                 .retryFailureCount(
                         festivalContentRepository
                                 .countByActiveTrueAndLastDetailFailureReasonIsNotNull()
+                )
+                .initialSyncPhase(initialSyncState.getPhase())
+                .initialSyncExecutionStatus(
+                        initialSyncState.getExecutionStatus()
+                )
+                .initialSyncPauseReason(
+                        initialSyncState.getPauseReason()
+                )
+                .initialListCompleted(
+                        initialSyncState.isListCompleted()
+                )
+                .initialDetailCompleted(
+                        initialSyncState.isDetailCompleted()
+                )
+                .initialImageCompleted(
+                        initialSyncState.isImageCompleted()
+                )
+                .initialSyncLastStartedAt(
+                        initialSyncState.getLastStartedAt()
+                )
+                .initialSyncLastCompletedAt(
+                        initialSyncState.getLastCompletedAt()
+                )
+                .initialSyncLastErrorMessage(
+                        initialSyncState.getLastErrorMessage()
                 )
                 .build();
     }

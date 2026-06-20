@@ -2,10 +2,12 @@ package com.example.Chungbuk.domain.festival.controller;
 
 import com.example.Chungbuk.domain.festival.dto.response.ExperienceListResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalDetailResponse;
+import com.example.Chungbuk.domain.festival.dto.response.FestivalInitializationResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalListResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalSyncMetadataInitializationResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalSyncResultResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalSyncStatusResponse;
+import com.example.Chungbuk.domain.festival.service.FestivalInitialSyncService;
 import com.example.Chungbuk.domain.festival.service.FestivalService;
 import com.example.Chungbuk.domain.festival.service.FestivalSyncMetadataService;
 import com.example.Chungbuk.domain.festival.service.FestivalSyncService;
@@ -31,8 +33,15 @@ public class FestivalController {
 
     private final FestivalService festivalService;
     private final FestivalSyncService festivalSyncService;
-    private final FestivalSyncMetadataService festivalSyncMetadataService;
-    private final FestivalSyncStatusService festivalSyncStatusService;
+
+    private final FestivalSyncMetadataService
+            festivalSyncMetadataService;
+
+    private final FestivalSyncStatusService
+            festivalSyncStatusService;
+
+    private final FestivalInitialSyncService
+            festivalInitialSyncService;
 
     @Operation(summary = "축제·공연·행사 목록 조회")
     @GetMapping
@@ -83,6 +92,21 @@ public class FestivalController {
             @PathVariable String contentId
     ) {
         return festivalService.getFestivalDetail(contentId);
+    }
+
+    @Operation(
+            summary = "홈페이지 최초 진입 초기 적재 확인",
+            description = """
+                    DB가 비어 있거나 초기 적재가 중단된 경우에만
+                    현재 단계부터 초기 적재 작업을 백그라운드에서 시작합니다.
+
+                    초기 적재 진행 중이거나 완료된 경우에는 TourAPI를
+                    재호출하지 않고 현재 상태만 반환합니다.
+                    """
+    )
+    @PostMapping("/sync/ensure-initialized")
+    public FestivalInitializationResponse ensureInitialized() {
+        return festivalInitialSyncService.ensureInitialized();
     }
 
     @Operation(
@@ -171,8 +195,8 @@ public class FestivalController {
     @Operation(
             summary = "축제·체험 동기화 상태 조회",
             description = """
-                    전체 콘텐츠 수, 상세 처리 상태, 이미지 실제 보유 수,
-                    이미지 없음 수, 재시도 대기 수를 조회합니다.
+                    전체 콘텐츠 수, 초기 적재 단계, 상세 처리 상태,
+                    이미지 실제 보유 수, 이미지 없음 수, 재시도 대기 수를 조회합니다.
                     """
     )
     @GetMapping("/sync/status")
