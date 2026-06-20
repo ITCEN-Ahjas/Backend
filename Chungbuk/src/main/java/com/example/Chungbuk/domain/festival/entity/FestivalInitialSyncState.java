@@ -143,7 +143,7 @@ public class FestivalInitialSyncState {
         updatedAt = LocalDateTime.now();
     }
 
-    public void updateProgress(
+    public void updateStableProgress(
             FestivalInitialSyncPhase phase,
             boolean listCompleted,
             boolean detailCompleted,
@@ -155,6 +155,9 @@ public class FestivalInitialSyncState {
             long retryFailureCount
     ) {
         this.phase = phase;
+        this.executionStatus = FestivalInitialSyncExecutionStatus.IDLE;
+        this.pauseReason = FestivalInitialSyncPauseReason.NONE;
+
         this.listCompleted = listCompleted;
         this.detailCompleted = detailCompleted;
         this.imageCompleted = imageCompleted;
@@ -165,10 +168,9 @@ public class FestivalInitialSyncState {
         this.retryScheduledCount = retryScheduledCount;
         this.retryFailureCount = retryFailureCount;
 
+        this.lastErrorMessage = null;
+
         if (phase == FestivalInitialSyncPhase.READY) {
-            this.executionStatus = FestivalInitialSyncExecutionStatus.IDLE;
-            this.pauseReason = FestivalInitialSyncPauseReason.NONE;
-            this.lastErrorMessage = null;
             this.lastCompletedAt = LocalDateTime.now();
         }
     }
@@ -217,6 +219,7 @@ public class FestivalInitialSyncState {
         this.phase = FestivalInitialSyncPhase.DETAIL_SYNCING;
         this.executionStatus = FestivalInitialSyncExecutionStatus.IDLE;
         this.pauseReason = FestivalInitialSyncPauseReason.NONE;
+        this.lastErrorMessage = null;
     }
 
     public boolean isRunning() {

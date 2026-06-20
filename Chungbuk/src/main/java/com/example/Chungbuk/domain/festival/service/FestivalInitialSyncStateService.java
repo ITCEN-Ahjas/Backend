@@ -33,9 +33,7 @@ public class FestivalInitialSyncStateService {
 
         SyncProgressSnapshot snapshot = loadSnapshot();
 
-        if (state.isRunning()
-                || state.isWaiting()
-                || state.isFailed()) {
+        if (state.isRunning() || state.isWaiting() || state.isFailed()) {
             state.updateMetrics(
                     snapshot.activeContentCount(),
                     snapshot.detailSyncedCount(),
@@ -66,10 +64,36 @@ public class FestivalInitialSyncStateService {
         return festivalInitialSyncStateRepository.save(state);
     }
 
+    public FestivalInitialSyncState completeListPhaseAndReconcile() {
+        FestivalInitialSyncState state = getRequiredState();
+
+        state.markListCompleted();
+
+        reconcileStableState(
+                state,
+                loadSnapshot(),
+                false
+        );
+
+        return festivalInitialSyncStateRepository.save(state);
+    }
+
+    public FestivalInitialSyncState completeCurrentPhaseAndReconcile() {
+        FestivalInitialSyncState state = getRequiredState();
+
+        reconcileStableState(
+                state,
+                loadSnapshot(),
+                false
+        );
+
+        return festivalInitialSyncStateRepository.save(state);
+    }
+
     public FestivalInitialSyncState waitForDailyQuota(
             String errorMessage
     ) {
-        FestivalInitialSyncState state = getCurrentState();
+        FestivalInitialSyncState state = getRequiredState();
 
         state.markWaiting(
                 FestivalInitialSyncPauseReason.DAILY_QUOTA_EXCEEDED,
@@ -82,7 +106,7 @@ public class FestivalInitialSyncStateService {
     public FestivalInitialSyncState waitForTourApiError(
             String errorMessage
     ) {
-        FestivalInitialSyncState state = getCurrentState();
+        FestivalInitialSyncState state = getRequiredState();
 
         state.markWaiting(
                 FestivalInitialSyncPauseReason.TOUR_API_ERROR,
@@ -95,7 +119,7 @@ public class FestivalInitialSyncStateService {
     public FestivalInitialSyncState markServerInterrupted(
             String errorMessage
     ) {
-        FestivalInitialSyncState state = getCurrentState();
+        FestivalInitialSyncState state = getRequiredState();
 
         if (state.getExecutionStatus()
                 != FestivalInitialSyncExecutionStatus.RUNNING) {
@@ -111,11 +135,18 @@ public class FestivalInitialSyncStateService {
     }
 
     public FestivalInitialSyncState markFailed(String errorMessage) {
-        FestivalInitialSyncState state = getCurrentState();
+        FestivalInitialSyncState state = getRequiredState();
 
         state.markFailed(errorMessage);
 
         return festivalInitialSyncStateRepository.save(state);
+    }
+
+    private FestivalInitialSyncState getRequiredState() {
+        return festivalInitialSyncStateRepository.findById(
+                        FestivalInitialSyncState.SINGLETON_ID
+                )
+                .orElseGet(FestivalInitialSyncState::createInitial);
     }
 
     private void reconcileStableState(
@@ -124,7 +155,7 @@ public class FestivalInitialSyncStateService {
             boolean createdFromExistingDatabase
     ) {
         if (snapshot.activeContentCount() == 0L) {
-            state.updateProgress(
+            state.updateStableProgress(
                     FestivalInitialSyncPhase.NOT_STARTED,
                     false,
                     false,
@@ -139,18 +170,7 @@ public class FestivalInitialSyncStateService {
             return;
         }
 
-        boolean listCompleted = state.isListCompleted();
-
-        /*
-         * 기존 DB에 이미 적재된 데이터를 처음 상태 테이블에 옮기는 경우에는
-         * 목록 적재가 완료된 데이터로 간주한다.
-         */
-        if (createdFromExistingDatabase) {
-            listCompleted = true;
-        }
-
-        boolean detailCompleted = listCompleted
-                && snapshot.detailSyncedCount()
+        boolean detailCompleted = snapshot.detailSyncedCount()
                 >= snapshot.activeContentCount();
 
         boolean imageCompleted = detailCompleted
@@ -159,14 +179,24 @@ public class FestivalInitialSyncStateService {
                 && snapshot.retryScheduledCount() == 0L
                 && snapshot.retryFailureCount() == 0L;
 
+        /*
+         * 상태 테이블이 없던 기존 완료 DB는 READY로 초기화한다.
+         * 단순히 데이터가 일부 존재한다고 목록 완료로 처리하지 않는다.
+         */
+        boolean legacyCompletedDatabase = createdFromExistingDatabase
+                && detailCompleted
+                && imageCompleted;
+
+        boolean listCompleted = state.isListCompleted()
+                || legacyCompletedDatabase;
+
         FestivalInitialSyncPhase phase = resolvePhase(
                 listCompleted,
                 detailCompleted,
-                imageCompleted,
-                snapshot.activeContentCount()
+                imageCompleted
         );
 
-        state.updateProgress(
+        state.updateStableProgress(
                 phase,
                 listCompleted,
                 detailCompleted,
@@ -182,13 +212,10 @@ public class FestivalInitialSyncStateService {
     private FestivalInitialSyncPhase resolvePhase(
             boolean listCompleted,
             boolean detailCompleted,
-            boolean imageCompleted,
-            long activeContentCount
+            boolean imageCompleted
     ) {
         if (!listCompleted) {
-            return activeContentCount == 0L
-                    ? FestivalInitialSyncPhase.NOT_STARTED
-                    : FestivalInitialSyncPhase.LIST_SYNCING;
+            return FestivalInitialSyncPhase.LIST_SYNCING;
         }
 
         if (!detailCompleted) {
@@ -205,8 +232,10 @@ public class FestivalInitialSyncStateService {
     private SyncProgressSnapshot loadSnapshot() {
         return new SyncProgressSnapshot(
                 festivalContentRepository.countByActiveTrue(),
-                festivalContentRepository.countByActiveTrueAndDetailSourceUpdatedAtIsNotNull(),
-                festivalContentRepository.countByActiveTrueAndImageSyncCompletedTrue(),
+                festivalContentRepository
+                        .countByActiveTrueAndDetailSourceUpdatedAtIsNotNull(),
+                festivalContentRepository
+                        .countByActiveTrueAndImageSyncCompletedTrue(),
                 festivalContentRepository
                         .countByActiveTrueAndNextDetailRetryAtIsNotNull(),
                 festivalContentRepository
