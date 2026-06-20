@@ -9,12 +9,15 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.example.Chungbuk.domain.place.dto.google.request.GooglePlacesTextSearchRequest;
+import com.example.Chungbuk.domain.place.dto.google.response.GooglePlaceDetailResponse;
 import com.example.Chungbuk.domain.place.dto.google.response.GooglePlacesTextSearchResponse;
 import com.example.Chungbuk.global.config.GooglePlacesProperties;
 import com.example.Chungbuk.global.exception.GooglePlacesApiException;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.client.ResourceAccessException;
 
@@ -86,5 +89,42 @@ class GooglePlacesClientTest {
                 GooglePlacesApiException.class,
                 () -> client.searchText(request)
         );
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void getPlaceDetailSendsApiKeyAndDetailFieldMaskInHeaders() {
+        RestTemplate restTemplate = mock(RestTemplate.class);
+        GooglePlacesProperties properties = new GooglePlacesProperties();
+        properties.setBaseUrl("https://places.googleapis.com/");
+        properties.setApiKey("test-api-key");
+        properties.setDetailFieldMask("id,displayName,formattedAddress");
+        GooglePlacesClient client = new GooglePlacesClient(restTemplate, properties);
+        GooglePlaceDetailResponse expectedResponse = new GooglePlaceDetailResponse();
+
+        when(restTemplate.exchange(
+                eq("https://places.googleapis.com/v1/places/place-1"),
+                eq(HttpMethod.GET),
+                org.mockito.ArgumentMatchers.<HttpEntity<Void>>any(),
+                eq(GooglePlaceDetailResponse.class)
+        )).thenReturn(ResponseEntity.ok(expectedResponse));
+
+        GooglePlaceDetailResponse actualResponse = client.getPlaceDetail("place-1");
+
+        ArgumentCaptor<HttpEntity<Void>> entityCaptor = ArgumentCaptor.forClass(HttpEntity.class);
+        verify(restTemplate).exchange(
+                eq("https://places.googleapis.com/v1/places/place-1"),
+                eq(HttpMethod.GET),
+                entityCaptor.capture(),
+                eq(GooglePlaceDetailResponse.class)
+        );
+
+        HttpEntity<Void> capturedEntity = entityCaptor.getValue();
+        assertEquals("test-api-key", capturedEntity.getHeaders().getFirst("X-Goog-Api-Key"));
+        assertEquals(
+                "id,displayName,formattedAddress",
+                capturedEntity.getHeaders().getFirst("X-Goog-FieldMask")
+        );
+        assertSame(expectedResponse, actualResponse);
     }
 }

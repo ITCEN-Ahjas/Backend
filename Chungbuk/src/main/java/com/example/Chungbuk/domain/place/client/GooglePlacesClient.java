@@ -1,6 +1,7 @@
 package com.example.Chungbuk.domain.place.client;
 
 import com.example.Chungbuk.domain.place.dto.google.request.GooglePlacesTextSearchRequest;
+import com.example.Chungbuk.domain.place.dto.google.response.GooglePlaceDetailResponse;
 import com.example.Chungbuk.domain.place.dto.google.response.GooglePlacesTextSearchResponse;
 import com.example.Chungbuk.global.exception.GooglePlacesApiException;
 import com.example.Chungbuk.global.config.GooglePlacesProperties;
@@ -9,6 +10,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
@@ -57,6 +59,27 @@ public class GooglePlacesClient {
         }
     }
 
+    public GooglePlaceDetailResponse getPlaceDetail(String placeId) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(API_KEY_HEADER, googlePlacesProperties.getApiKey());
+        headers.set(FIELD_MASK_HEADER, googlePlacesProperties.getDetailFieldMask());
+
+        HttpEntity<Void> httpEntity = new HttpEntity<>(headers);
+
+        try {
+            ResponseEntity<GooglePlaceDetailResponse> response = restTemplate.exchange(
+                    createPlaceDetailUrl(placeId),
+                    HttpMethod.GET,
+                    httpEntity,
+                    GooglePlaceDetailResponse.class
+            );
+
+            return response.getBody();
+        } catch (RestClientException exception) {
+            throw new GooglePlacesApiException("Google Places API 상세 요청에 실패했습니다.", exception);
+        }
+    }
+
     private String createTextSearchUrl() {
         String baseUrl = googlePlacesProperties.getBaseUrl();
 
@@ -72,6 +95,13 @@ public class GooglePlacesClient {
                 .fromUriString(createBaseUrl() + PHOTO_MEDIA_PREFIX + photoName + PHOTO_MEDIA_SUFFIX)
                 .queryParam("maxWidthPx", maxWidthPx)
                 .queryParam("key", googlePlacesProperties.getApiKey())
+                .build(false)
+                .toUriString();
+    }
+
+    private String createPlaceDetailUrl(String placeId) {
+        return UriComponentsBuilder
+                .fromUriString(createBaseUrl() + "/v1/places/" + placeId)
                 .build(false)
                 .toUriString();
     }

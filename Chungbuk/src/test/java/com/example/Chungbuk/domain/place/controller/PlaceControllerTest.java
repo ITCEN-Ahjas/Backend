@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.example.Chungbuk.domain.place.constant.PlaceCategory;
+import com.example.Chungbuk.domain.place.dto.response.PlaceDetailResponse;
 import com.example.Chungbuk.domain.place.dto.response.PlaceSearchResponse;
 import com.example.Chungbuk.domain.place.dto.response.PlaceSummaryResponse;
 import com.example.Chungbuk.domain.place.service.PlaceSearchService;
@@ -137,5 +138,28 @@ class PlaceControllerTest {
                 .andExpect(jsonPath("$.message")
                         .value("장소 검색 서비스에 일시적으로 연결할 수 없습니다."))
                 .andExpect(jsonPath("$.path").value("/api/places"));
+    }
+
+    @Test
+    void getPlaceDetailReturnsPlaceDetail() throws Exception {
+        PlaceDetailResponse response = PlaceDetailResponse.builder()
+                .placeId("place-1")
+                .name("Gosucave")
+                .address("Chungbuk Danyang")
+                .rating(4.5)
+                .photoName("places/place-1/photos/photo-1")
+                .photoNames(List.of("places/place-1/photos/photo-1"))
+                .weekdayDescriptions(List.of("Monday: 09:00-18:00"))
+                .build();
+        when(placeSearchService.getPlaceDetail("place-1")).thenReturn(response);
+
+        mockMvc.perform(get("/api/places/place-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.placeId").value("place-1"))
+                .andExpect(jsonPath("$.name").value("Gosucave"))
+                .andExpect(jsonPath("$.photoName").value("places/place-1/photos/photo-1"))
+                .andExpect(jsonPath("$.weekdayDescriptions[0]").value("Monday: 09:00-18:00"));
+
+        verify(placeSearchService).getPlaceDetail("place-1");
     }
 }

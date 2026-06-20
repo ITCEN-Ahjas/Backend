@@ -1,6 +1,7 @@
 package com.example.Chungbuk.domain.place.controller;
 
 import com.example.Chungbuk.domain.place.constant.PlaceCategory;
+import com.example.Chungbuk.domain.place.dto.response.PlaceDetailResponse;
 import com.example.Chungbuk.domain.place.dto.response.PlaceSearchResponse;
 import com.example.Chungbuk.domain.place.service.PlaceSearchService;
 import com.example.Chungbuk.global.exception.InvalidRequestException;
@@ -15,6 +16,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -101,6 +103,15 @@ public class PlaceController {
         return placeSearchService.getPhotoMedia(name, maxWidthPx);
     }
 
+    @GetMapping("/{placeId}")
+    public PlaceDetailResponse getPlaceDetail(
+            @PathVariable
+            String placeId
+    ) {
+        validatePlaceId(placeId);
+        return placeSearchService.getPlaceDetail(placeId);
+    }
+
     private void validateSize(int size) {
         if (size < 1 || size > 20) {
             throw new InvalidRequestException("size는 1 이상 20 이하여야 합니다.");
@@ -110,6 +121,12 @@ public class PlaceController {
     private void validatePhotoName(String name) {
         if (name == null || name.isBlank() || !name.startsWith("places/")) {
             throw new InvalidRequestException("올바른 장소 사진 리소스명이 아닙니다.");
+        }
+    }
+
+    private void validatePlaceId(String placeId) {
+        if (placeId == null || placeId.isBlank()) {
+            throw new InvalidRequestException("장소 ID가 비어 있습니다.");
         }
     }
 }
