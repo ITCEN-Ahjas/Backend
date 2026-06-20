@@ -13,6 +13,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -88,9 +89,27 @@ public class PlaceController {
         return placeSearchService.search(keyword, category, size, pageToken);
     }
 
+    @GetMapping("/photo")
+    public ResponseEntity<byte[]> getPlacePhoto(
+            @RequestParam("name")
+            String name,
+
+            @RequestParam(defaultValue = "320")
+            int maxWidthPx
+    ) {
+        validatePhotoName(name);
+        return placeSearchService.getPhotoMedia(name, maxWidthPx);
+    }
+
     private void validateSize(int size) {
         if (size < 1 || size > 20) {
             throw new InvalidRequestException("size는 1 이상 20 이하여야 합니다.");
+        }
+    }
+
+    private void validatePhotoName(String name) {
+        if (name == null || name.isBlank() || !name.startsWith("places/")) {
+            throw new InvalidRequestException("올바른 장소 사진 리소스명이 아닙니다.");
         }
     }
 }

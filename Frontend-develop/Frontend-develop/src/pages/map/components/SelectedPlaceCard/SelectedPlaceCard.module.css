@@ -1,0 +1,108 @@
+.card {
+  position: absolute;
+  z-index: 5;
+  right: 2rem;
+  bottom: 2rem;
+  left: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2.4rem;
+  padding: 1.8rem 2rem;
+  border: 1px solid rgba(114, 69, 152, 0.18);
+  border-radius: 1.8rem;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 1.6rem 4rem rgba(30, 41, 59, 0.2);
+  backdrop-filter: blur(1.2rem);
+}
+
+.content {
+  min-width: 0;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.6rem;
+  margin-bottom: 0.7rem;
+  padding: 0 1rem;
+  border-radius: 999px;
+  background: rgba(114, 69, 152, 0.1);
+  font-size: 1.1rem;
+  font-weight: 900;
+  color: var(--color-chungbuk-purple);
+}
+
+.content h3 {
+  overflow: hidden;
+  margin-bottom: 0.4rem;
+  font-size: 1.8rem;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-chungbuk-dark-blue);
+}
+
+.content p {
+  overflow: hidden;
+  font-size: 1.25rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-slate-500);
+}
+
+.actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 1rem;
+}
+
+.actions button {
+  min-height: 4rem;
+  padding: 0 1.5rem;
+  border-radius: 1.2rem;
+  font-size: 1.2rem;
+  font-weight: 900;
+}
+
+.secondaryButton {
+  background: var(--color-slate-100);
+  color: var(--color-slate-600);
+}
+
+.secondaryButton:hover {
+  background: rgba(114, 69, 152, 0.1);
+  color: var(--color-chungbuk-purple);
+}
+
+.primaryButton {
+  background: var(--color-chungbuk-purple);
+  color: var(--color-white);
+}
+
+.primaryButton:hover {
+  background: var(--color-chungbuk-dark-blue);
+}
+
+@media (max-width: 720px) {
+  .card {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 1.2rem;
+  }
+
+  .actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 480px) {
+  .actions,
+  .actions button {
+    width: 100%;
+  }
+}

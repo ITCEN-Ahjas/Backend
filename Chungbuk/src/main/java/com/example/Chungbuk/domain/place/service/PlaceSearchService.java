@@ -9,6 +9,7 @@ import com.example.Chungbuk.domain.place.dto.response.PlaceSummaryResponse;
 import java.util.Collections;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -20,6 +21,9 @@ public class PlaceSearchService {
     private static final String DEFAULT_REGION_CODE = "KR";
     private static final int DEFAULT_PAGE_SIZE = 10;
     private static final int MAX_PAGE_SIZE = 20;
+    private static final int DEFAULT_PHOTO_WIDTH = 320;
+    private static final int MIN_PHOTO_WIDTH = 100;
+    private static final int MAX_PHOTO_WIDTH = 1200;
 
     private static final double CHUNGBUK_SOUTH_LATITUDE = 35.97;
     private static final double CHUNGBUK_WEST_LONGITUDE = 127.27;
@@ -59,6 +63,13 @@ public class PlaceSearchService {
                 .size(items.size())
                 .nextPageToken(googleResponse.getNextPageToken())
                 .build();
+    }
+
+    public ResponseEntity<byte[]> getPhotoMedia(String photoName, Integer maxWidthPx) {
+        return googlePlacesClient.getPhotoMedia(
+                photoName,
+                resolvePhotoWidth(maxWidthPx)
+        );
     }
 
     private GooglePlacesTextSearchRequest createSearchRequest(
@@ -148,6 +159,14 @@ public class PlaceSearchService {
         }
 
         return Math.max(1, Math.min(size, MAX_PAGE_SIZE));
+    }
+
+    private int resolvePhotoWidth(Integer maxWidthPx) {
+        if (maxWidthPx == null) {
+            return DEFAULT_PHOTO_WIDTH;
+        }
+
+        return Math.max(MIN_PHOTO_WIDTH, Math.min(maxWidthPx, MAX_PHOTO_WIDTH));
     }
 
     private String normalizeNullable(String value) {
