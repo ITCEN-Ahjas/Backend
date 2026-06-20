@@ -3,10 +3,13 @@ package com.example.Chungbuk.domain.festival.controller;
 import com.example.Chungbuk.domain.festival.dto.response.ExperienceListResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalDetailResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalListResponse;
+import com.example.Chungbuk.domain.festival.dto.response.FestivalSyncMetadataInitializationResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalSyncResultResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalSyncStatusResponse;
 import com.example.Chungbuk.domain.festival.service.FestivalService;
+import com.example.Chungbuk.domain.festival.service.FestivalSyncMetadataService;
 import com.example.Chungbuk.domain.festival.service.FestivalSyncService;
+import com.example.Chungbuk.domain.festival.service.FestivalSyncStatusService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +31,8 @@ public class FestivalController {
 
     private final FestivalService festivalService;
     private final FestivalSyncService festivalSyncService;
+    private final FestivalSyncMetadataService festivalSyncMetadataService;
+    private final FestivalSyncStatusService festivalSyncStatusService;
 
     @Operation(summary = "축제·공연·행사 목록 조회")
     @GetMapping
@@ -69,7 +74,10 @@ public class FestivalController {
         );
     }
 
-    @Operation(summary = "축제·체험 상세 조회")
+    @Operation(
+            summary = "축제·체험 상세 조회",
+            description = "존재하지 않거나 비활성화된 콘텐츠는 HTTP 404를 반환합니다."
+    )
     @GetMapping("/{contentId}")
     public FestivalDetailResponse getFestivalDetail(
             @PathVariable String contentId
@@ -78,13 +86,30 @@ public class FestivalController {
     }
 
     @Operation(
+            summary = "기존 콘텐츠 동기화 상태값 초기화",
+            description = """
+                    현재 DB에 저장된 상세 정보와 이미지 데이터를 기준으로
+                    detail_source_updated_at, image_sync_completed 상태값을 초기화합니다.
+
+                    TourAPI 목록·상세·이미지 API를 호출하지 않으며,
+                    기존 festival_contents 데이터는 삭제하거나 새로 수집하지 않습니다.
+                    """
+    )
+    @PostMapping("/sync/metadata/initialize")
+    public FestivalSyncMetadataInitializationResponse
+    initializeLegacySyncMetadata() {
+        return festivalSyncMetadataService
+                .initializeLegacySyncMetadata();
+    }
+
+    @Operation(
             summary = "전체 콘텐츠 초기 적재",
             description = """
                     축제, 공연, 행사, 관광지, 문화시설, 레포츠 목록을 수집하고
                     상세 소개, 홈페이지, 유형별 주요 정보, 상세 이미지를 가능한 범위까지 저장합니다.
 
-                    TourAPI 호출은 요청당 최대 900회로 제한됩니다.
-                    호출 예산이 끝난 뒤 다시 실행하면 상세 미완료 콘텐츠를 이어서 처리합니다.
+                    요청별 호출 수와 당일 TourAPI 호출 예산을 함께 확인합니다.
+                    호출 예산이 부족하면 남은 상세 작업은 다음 실행으로 보류됩니다.
                     """
     )
     @PostMapping("/sync/bootstrap")
@@ -92,21 +117,24 @@ public class FestivalController {
             @RequestParam(defaultValue = "30") int size,
             @RequestParam(defaultValue = "50") int maxPages,
             @RequestParam(defaultValue = "900") int maxApiCalls,
-            @RequestParam(defaultValue = "true") boolean includeImages
+            @RequestParam(defaultValue = "true") boolean includeDetail
     ) {
         return festivalSyncService.bootstrapFestivalContents(
                 size,
                 maxPages,
                 maxApiCalls,
-                includeImages
+                includeDetail
         );
     }
 
     @Operation(
             summary = "축제·체험 자동 갱신 실행",
             description = """
-                    목록 데이터를 먼저 갱신한 뒤 신규, 수정, 상세 미완료 콘텐츠만 상세 API로 보강합니다.
-                    레포츠 카드 정보는 장소 중심으로 처리하므로 카드 목적의 detailIntro2 반복 호출은 하지 않습니다.
+                    목록 데이터를 먼저 갱신한 뒤 신규, 수정, 상세 미완료,
+                    이미지 미완료 콘텐츠만 상세 API로 보강합니다.
+
+                    이미지가 원본에 없는 콘텐츠는 정상 완료로 처리하며,
+                    실제 API 오류·타임아웃만 재시도 대상으로 관리합니다.
                     """
     )
     @PostMapping("/sync/refresh")
@@ -114,34 +142,41 @@ public class FestivalController {
             @RequestParam(defaultValue = "30") int size,
             @RequestParam(defaultValue = "50") int maxPages,
             @RequestParam(defaultValue = "900") int maxApiCalls,
-            @RequestParam(defaultValue = "true") boolean includeImages
+            @RequestParam(defaultValue = "true") boolean includeDetail
     ) {
         return festivalSyncService.refreshFestivalContents(
                 size,
                 maxPages,
                 maxApiCalls,
-                includeImages
+                includeDetail
         );
     }
 
     @Operation(
             summary = "콘텐츠 단건 상세 재동기화",
-            description = "특정 콘텐츠의 상세 소개, 홈페이지, 유형별 주요 정보, 상세 이미지를 다시 저장합니다."
+            description = """
+                    특정 콘텐츠의 상세 소개, 홈페이지, 유형별 주요 정보,
+                    상세 이미지를 다시 저장합니다.
+
+                    단건 상세 재동기화는 항상 상세·이미지를 함께 처리합니다.
+                    """
     )
     @PostMapping("/sync/{contentId}/detail")
     public FestivalSyncResultResponse syncFestivalContentDetail(
-            @PathVariable String contentId,
-            @RequestParam(defaultValue = "true") boolean includeImages
+            @PathVariable String contentId
     ) {
-        return festivalSyncService.syncFestivalContentDetail(
-                contentId,
-                includeImages
-        );
+        return festivalSyncService.syncFestivalContentDetail(contentId);
     }
 
-    @Operation(summary = "축제·체험 동기화 상태 조회")
+    @Operation(
+            summary = "축제·체험 동기화 상태 조회",
+            description = """
+                    전체 콘텐츠 수, 상세 처리 상태, 이미지 실제 보유 수,
+                    이미지 없음 수, 재시도 대기 수를 조회합니다.
+                    """
+    )
     @GetMapping("/sync/status")
     public FestivalSyncStatusResponse getFestivalSyncStatus() {
-        return festivalSyncService.getFestivalSyncStatus();
+        return festivalSyncStatusService.getFestivalSyncStatus();
     }
 }

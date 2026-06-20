@@ -1,5 +1,6 @@
 package com.example.Chungbuk.domain.festival.entity;
 
+import com.example.Chungbuk.domain.festival.constant.FestivalDetailRetryReason;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -25,17 +26,48 @@ import lombok.NoArgsConstructor;
 @Table(
         name = "festival_contents",
         indexes = {
-                @Index(name = "idx_festival_content_id", columnList = "content_id", unique = true),
-                @Index(name = "idx_festival_content_type_id", columnList = "content_type_id"),
-                @Index(name = "idx_festival_region", columnList = "region"),
-                @Index(name = "idx_festival_category", columnList = "category"),
-                @Index(name = "idx_festival_theme_category", columnList = "theme_category"),
-                @Index(name = "idx_festival_start_date", columnList = "start_date"),
-                @Index(name = "idx_festival_end_date", columnList = "end_date"),
-                @Index(name = "idx_festival_active", columnList = "is_active")
+                @Index(
+                        name = "idx_festival_content_id",
+                        columnList = "content_id",
+                        unique = true
+                ),
+                @Index(
+                        name = "idx_festival_content_type_id",
+                        columnList = "content_type_id"
+                ),
+                @Index(
+                        name = "idx_festival_region",
+                        columnList = "region"
+                ),
+                @Index(
+                        name = "idx_festival_category",
+                        columnList = "category"
+                ),
+                @Index(
+                        name = "idx_festival_theme_category",
+                        columnList = "theme_category"
+                ),
+                @Index(
+                        name = "idx_festival_start_date",
+                        columnList = "start_date"
+                ),
+                @Index(
+                        name = "idx_festival_end_date",
+                        columnList = "end_date"
+                ),
+                @Index(
+                        name = "idx_festival_active",
+                        columnList = "is_active"
+                ),
+                @Index(
+                        name = "idx_festival_next_detail_retry_at",
+                        columnList = "next_detail_retry_at"
+                )
         }
 )
 public class FestivalContent {
+
+    private static final int MAX_DETAIL_RETRY_COUNT = 10;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -144,17 +176,23 @@ public class FestivalContent {
     @Column(name = "last_synced_at")
     private LocalDateTime lastSyncedAt;
 
-    /* TourAPI 목록 응답의 modifiedtime */
     @Column(name = "source_updated_at")
     private LocalDateTime sourceUpdatedAt;
 
-    /* 마지막으로 detailCommon2/detailIntro2까지 성공 저장한 원본 수정 시각 */
     @Column(name = "detail_source_updated_at")
     private LocalDateTime detailSourceUpdatedAt;
 
-    /* detailImage2까지 정상 응답을 받아 이미지 목록을 확정했는지 여부 */
     @Column(name = "image_sync_completed")
     private Boolean imageSyncCompleted;
+
+    @Column(name = "detail_retry_count", nullable = false)
+    private Integer detailRetryCount;
+
+    @Column(name = "next_detail_retry_at")
+    private LocalDateTime nextDetailRetryAt;
+
+    @Column(name = "last_detail_failure_reason", length = 80)
+    private String lastDetailFailureReason;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -172,6 +210,10 @@ public class FestivalContent {
 
         if (imageSyncCompleted == null) {
             imageSyncCompleted = false;
+        }
+
+        if (detailRetryCount == null) {
+            detailRetryCount = 0;
         }
 
         createdAt = now;
@@ -274,14 +316,20 @@ public class FestivalContent {
             LocalDateTime lastSyncedAt,
             LocalDateTime sourceUpdatedAt
     ) {
-        this.contentTypeId = chooseContentTypeId(contentTypeId, this.contentTypeId);
+        this.contentTypeId = chooseContentTypeId(
+                contentTypeId,
+                this.contentTypeId
+        );
         this.cat1 = chooseText(cat1, this.cat1);
         this.cat2 = chooseText(cat2, this.cat2);
         this.cat3 = chooseText(cat3, this.cat3);
         this.title = chooseText(title, this.title);
         this.region = chooseText(region, this.region);
         this.category = chooseText(category, this.category);
-        this.themeCategory = chooseText(themeCategory, this.themeCategory);
+        this.themeCategory = chooseText(
+                themeCategory,
+                this.themeCategory
+        );
         this.status = chooseText(status, this.status);
         this.startDate = chooseText(startDate, this.startDate);
         this.endDate = chooseText(endDate, this.endDate);
@@ -306,13 +354,10 @@ public class FestivalContent {
     public void initializeDailyRefreshBaseline(
             LocalDateTime sourceUpdatedAt
     ) {
-        if (hasStoredDetail() && detailSourceUpdatedAt == null
+        if (hasStoredDetail()
+                && detailSourceUpdatedAt == null
                 && sourceUpdatedAt != null) {
             detailSourceUpdatedAt = sourceUpdatedAt;
-        }
-
-        if (hasStoredDetail() && imageSyncCompleted == null) {
-            imageSyncCompleted = true;
         }
     }
 
@@ -446,14 +491,20 @@ public class FestivalContent {
                 && hasText(contentTypeId)
                 && !this.contentTypeId.equals(contentTypeId);
 
-        this.contentTypeId = chooseContentTypeId(contentTypeId, this.contentTypeId);
+        this.contentTypeId = chooseContentTypeId(
+                contentTypeId,
+                this.contentTypeId
+        );
 
         if (incomingTypeMismatch) {
             this.cat1 = chooseText(this.cat1, cat1);
             this.cat2 = chooseText(this.cat2, cat2);
             this.cat3 = chooseText(this.cat3, cat3);
             this.category = chooseText(this.category, category);
-            this.themeCategory = chooseText(this.themeCategory, themeCategory);
+            this.themeCategory = chooseText(
+                    this.themeCategory,
+                    themeCategory
+            );
             this.status = chooseText(this.status, status);
             this.startDate = chooseText(this.startDate, startDate);
             this.endDate = chooseText(this.endDate, endDate);
@@ -462,7 +513,10 @@ public class FestivalContent {
             this.cat2 = chooseText(cat2, this.cat2);
             this.cat3 = chooseText(cat3, this.cat3);
             this.category = chooseText(category, this.category);
-            this.themeCategory = chooseText(themeCategory, this.themeCategory);
+            this.themeCategory = chooseText(
+                    themeCategory,
+                    this.themeCategory
+            );
             this.status = chooseText(status, this.status);
             this.startDate = chooseText(startDate, this.startDate);
             this.endDate = chooseText(endDate, this.endDate);
@@ -476,12 +530,18 @@ public class FestivalContent {
         this.homepage = chooseText(homepage, this.homepage);
         this.overview = chooseText(overview, this.overview);
         this.description = chooseText(description, this.description);
-        this.descriptionSource = chooseText(descriptionSource, this.descriptionSource);
+        this.descriptionSource = chooseText(
+                descriptionSource,
+                this.descriptionSource
+        );
         this.mapX = chooseText(mapX, this.mapX);
         this.mapY = chooseText(mapY, this.mapY);
         this.eventPlace = chooseText(eventPlace, this.eventPlace);
         this.playTime = chooseText(playTime, this.playTime);
-        this.useTimeFestival = chooseText(useTimeFestival, this.useTimeFestival);
+        this.useTimeFestival = chooseText(
+                useTimeFestival,
+                this.useTimeFestival
+        );
         this.sponsor = chooseText(sponsor, this.sponsor);
 
         updateDisplayInfoPreservingUsefulValue(
@@ -491,7 +551,10 @@ public class FestivalContent {
                 extraValue
         );
 
-        this.mainInfoJson = chooseJsonArray(mainInfoJson, this.mainInfoJson);
+        this.mainInfoJson = chooseJsonArray(
+                mainInfoJson,
+                this.mainInfoJson
+        );
         this.lastSyncedAt = lastSyncedAt;
         updateSourceUpdatedAt(sourceUpdatedAt);
 
@@ -518,22 +581,69 @@ public class FestivalContent {
         this.imageSyncCompleted = true;
         this.lastSyncedAt = lastSyncedAt;
         this.active = true;
+        clearDetailRetry();
     }
 
-    public void markDetailCommonUnavailable(
-            LocalDateTime lastSyncedAt,
-            LocalDateTime sourceUpdatedAt
+    public void recordDetailRetry(
+            FestivalDetailRetryReason reason,
+            LocalDateTime requestedAt
     ) {
-        this.descriptionSource = "DETAIL_COMMON_EMPTY";
-        this.lastSyncedAt = lastSyncedAt;
-        updateSourceUpdatedAt(sourceUpdatedAt);
-
-        if (sourceUpdatedAt != null) {
-            this.detailSourceUpdatedAt = sourceUpdatedAt;
+        if (reason == null || requestedAt == null) {
+            return;
         }
 
-        this.imageSyncCompleted = true;
+        int currentRetryCount = detailRetryCount == null
+                ? 0
+                : detailRetryCount;
+
+        int nextRetryCount = Math.min(
+                currentRetryCount + 1,
+                MAX_DETAIL_RETRY_COUNT
+        );
+
+        this.detailRetryCount = nextRetryCount;
+        this.lastDetailFailureReason = reason.name();
+        this.nextDetailRetryAt = requestedAt.plusHours(
+                calculateRetryDelayHours(nextRetryCount)
+        );
+
+        if (reason.isImageOnlyRetry()) {
+            this.imageSyncCompleted = false;
+        }
+
+        this.lastSyncedAt = requestedAt;
         this.active = true;
+    }
+
+    public void clearDetailRetry() {
+        this.detailRetryCount = 0;
+        this.nextDetailRetryAt = null;
+        this.lastDetailFailureReason = null;
+    }
+
+    public boolean isDetailRetryScheduled(
+            LocalDateTime now
+    ) {
+        return nextDetailRetryAt != null
+                && now != null
+                && now.isBefore(nextDetailRetryAt);
+    }
+
+    public boolean isDetailRetryDue(
+            LocalDateTime now
+    ) {
+        return nextDetailRetryAt != null
+                && now != null
+                && !now.isBefore(nextDetailRetryAt);
+    }
+
+    public boolean isImageOnlyRetry() {
+        FestivalDetailRetryReason reason =
+                FestivalDetailRetryReason.from(
+                        lastDetailFailureReason
+                );
+
+        return reason != null && reason.isImageOnlyRetry();
     }
 
     public void updateContent(
@@ -610,7 +720,6 @@ public class FestivalContent {
         return hasText(overview)
                 || hasText(homepage)
                 || hasText(description)
-                || hasText(descriptionSource)
                 || hasMeaningfulJsonArray(mainInfoJson)
                 || detailSourceUpdatedAt != null;
     }
@@ -624,7 +733,10 @@ public class FestivalContent {
         if (isUsefulDisplayInfo(newTimeLabel, newTimeValue)) {
             this.timeLabel = newTimeLabel;
             this.timeValue = newTimeValue;
-        } else if (!isUsefulDisplayInfo(this.timeLabel, this.timeValue)) {
+        } else if (!isUsefulDisplayInfo(
+                this.timeLabel,
+                this.timeValue
+        )) {
             this.timeLabel = "";
             this.timeValue = "";
         }
@@ -632,7 +744,10 @@ public class FestivalContent {
         if (isUsefulDisplayInfo(newExtraLabel, newExtraValue)) {
             this.extraLabel = newExtraLabel;
             this.extraValue = newExtraValue;
-        } else if (!isUsefulDisplayInfo(this.extraLabel, this.extraValue)) {
+        } else if (!isUsefulDisplayInfo(
+                this.extraLabel,
+                this.extraValue
+        )) {
             this.extraLabel = "";
             this.extraValue = "";
         }
@@ -661,7 +776,10 @@ public class FestivalContent {
         }
     }
 
-    private String chooseContentTypeId(String newValue, String currentValue) {
+    private String chooseContentTypeId(
+            String newValue,
+            String currentValue
+    ) {
         if (hasText(currentValue)
                 && hasText(newValue)
                 && "15".equals(newValue)
@@ -711,6 +829,22 @@ public class FestivalContent {
                 && !normalized.equals("상세페이지에서 확인")
                 && !normalized.equals("제공된 상세 설명이 없습니다.")
                 && !normalized.equals("분류");
+    }
+
+    private int calculateRetryDelayHours(int retryCount) {
+        if (retryCount <= 1) {
+            return 6;
+        }
+
+        if (retryCount == 2) {
+            return 24;
+        }
+
+        if (retryCount == 3) {
+            return 72;
+        }
+
+        return 168;
     }
 
     private boolean hasText(String value) {

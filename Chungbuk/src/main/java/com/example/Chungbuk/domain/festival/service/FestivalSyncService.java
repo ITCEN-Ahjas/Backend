@@ -1,7 +1,9 @@
 package com.example.Chungbuk.domain.festival.service;
 
 import com.example.Chungbuk.domain.festival.client.TourApiClient;
+import com.example.Chungbuk.domain.festival.constant.FestivalDetailRetryReason;
 import com.example.Chungbuk.domain.festival.constant.FestivalSyncGroup;
+import com.example.Chungbuk.domain.festival.constant.SupportedContentType;
 import com.example.Chungbuk.domain.festival.dto.response.ExperienceListResponse;
 import com.example.Chungbuk.domain.festival.dto.response.ExperienceSummaryResponse;
 import com.example.Chungbuk.domain.festival.dto.response.FestivalDetailResponse;
@@ -13,6 +15,7 @@ import com.example.Chungbuk.domain.festival.dto.response.FestivalSyncStatusRespo
 import com.example.Chungbuk.domain.festival.entity.FestivalContent;
 import com.example.Chungbuk.domain.festival.mapper.FestivalMapper;
 import com.example.Chungbuk.domain.festival.repository.FestivalContentRepository;
+import com.example.Chungbuk.global.exception.TourApiQuotaExceededException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -29,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
@@ -49,7 +53,10 @@ public class FestivalSyncService {
     private static final int DEFAULT_MAX_PAGES = 50;
     private static final int MAX_MAX_PAGES = 50;
 
-    /* 개발계정 일일 호출 한도 1,000회보다 여유를 둔 자동 동기화 상한 */
+    /*
+     * 실행 1회당 최대 호출 수다.
+     * 실제 하루 전체 호출량은 TourApiQuotaService에서 DB 기준으로 관리한다.
+     */
     private static final int DEFAULT_MAX_API_CALLS = 900;
     private static final int MAX_MAX_API_CALLS = 900;
 
@@ -59,8 +66,8 @@ public class FestivalSyncService {
     private static final String DEFAULT_FESTIVAL_CONTENT_TYPE_ID = "15";
     private static final String DEFAULT_EVENT_START_DATE = "20230101";
 
-    private static final List<String> EXPERIENCE_CONTENT_TYPE_IDS =
-            List.of("12", "14", "28");
+    private static final List<String> SUPPORTED_CONTENT_TYPE_IDS =
+            List.of("12", "14", "15", "28");
 
     private static final DateTimeFormatter TOUR_API_DATE_FORMAT =
             DateTimeFormatter.ofPattern("yyyyMMdd");
@@ -72,9 +79,14 @@ public class FestivalSyncService {
     private final FestivalMapper festivalMapper;
     private final FestivalContentRepository festivalContentRepository;
     private final PlatformTransactionManager transactionManager;
+    private final TourApiQuotaService tourApiQuotaService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    /*
+     * 현재 단일 서버 인스턴스에서 Scheduler와 수동 sync가
+     * 동시에 실행되지 않도록 막는다.
+     */
     private final AtomicBoolean syncRunning = new AtomicBoolean(false);
 
     @Transactional(readOnly = true)
@@ -119,7 +131,10 @@ public class FestivalSyncService {
                 .build();
     }
 
-    /* 새벽 스케줄러 전용 진입점 */
+    /*
+     * 새벽 Scheduler 전용 refresh.
+     * 신규·수정·상세 미완료·이미지 미완료 대상만 보강한다.
+     */
     public FestivalSyncResultResponse refreshFestivalContents() {
         return runListRefresh(
                 new SyncRequest(
@@ -137,8 +152,8 @@ public class FestivalSyncService {
     }
 
     /*
-     * FestivalController의 기존 /sync/bootstrap API 호환용 진입점.
-     * 최초 적재는 목록 누락을 삭제로 처리하지 않고, 모든 상세를 다시 확인한다.
+     * 최초 전체 적재.
+     * 기존 목록 누락 데이터를 비활성화하지 않고, 상세 전체 보강을 시도한다.
      */
     public FestivalSyncResultResponse bootstrapFestivalContents(
             int size,
@@ -162,8 +177,8 @@ public class FestivalSyncService {
     }
 
     /*
-     * FestivalController의 기존 /sync/refresh API 호환용 진입점.
-     * 수동 refresh는 자동 스케줄 실행과 같은 변경 감지·안전 비활성화 흐름을 사용한다.
+     * 수동 refresh.
+     * Scheduler와 같은 변경 감지·안전 비활성화 흐름을 사용한다.
      */
     public FestivalSyncResultResponse refreshFestivalContents(
             int size,
@@ -186,7 +201,10 @@ public class FestivalSyncService {
         );
     }
 
-    /* 기존 Swagger 단일 페이지 동기화 API 호환용 */
+    /*
+     * 과거 호환용 메서드.
+     * 다음 커밋에서 Controller·Swagger 정리 시 제거 대상이다.
+     */
     public FestivalSyncResultResponse syncFestivalContents(
             int festivalPage,
             int festivalSize,
@@ -255,7 +273,6 @@ public class FestivalSyncService {
         );
     }
 
-    /* 기존 /sync/sequential API는 새 공정 순환 refresh 로직을 사용한다. */
     public FestivalSyncResultResponse syncFestivalContentsSequential(
             int size,
             int maxPages,
@@ -279,7 +296,6 @@ public class FestivalSyncService {
         );
     }
 
-    /* 기존 카드 보강 API는 상세 미완료 대상 보강으로 통합한다. */
     public FestivalSyncResultResponse syncFestivalCardInfo(
             int limit,
             int maxApiCalls,
@@ -295,28 +311,28 @@ public class FestivalSyncService {
     ) {
         if (!syncRunning.compareAndSet(false, true)) {
             return emptySyncResponse(
-                    "축제·체험 동기화가 이미 실행 중입니다. 기존 요청이 끝난 뒤 다시 실행하세요."
+                    "축제·체험 동기화가 이미 실행 중입니다. "
+                            + "기존 요청이 끝난 뒤 다시 실행하세요."
             );
         }
 
         try {
             LocalDateTime syncedAt = LocalDateTime.now();
             SyncCounter counter = new SyncCounter();
+
             Map<FestivalSyncGroup, GroupSyncWork> groupWorkMap =
                     createGroupWorkMap();
-
-            int validLimit = normalizeDetailLimit(limit);
-            int validMaxApiCalls = normalizeMaxApiCalls(maxApiCalls);
 
             addStoredDetailTargets(
                     groupWorkMap,
                     onlyMissing,
-                    validLimit
+                    normalizeDetailLimit(limit),
+                    syncedAt
             );
 
             processDetailTasksRoundRobin(
                     groupWorkMap,
-                    validMaxApiCalls,
+                    normalizeMaxApiCalls(maxApiCalls),
                     syncedAt,
                     counter
             );
@@ -332,7 +348,7 @@ public class FestivalSyncService {
                     0,
                     0,
                     0,
-                    validLimit,
+                    normalizeDetailLimit(limit),
                     true,
                     false,
                     false,
@@ -346,16 +362,10 @@ public class FestivalSyncService {
         }
     }
 
-    /* FestivalController의 includeImages 파라미터 호환용 진입점. */
     public FestivalSyncResultResponse syncFestivalContentDetail(
             String contentId,
             boolean includeImages
     ) {
-        /*
-         * 현재 단건 재동기화는 상세 공통·유형별·이미지를 함께 정합성 있게 갱신한다.
-         * includeImages=false로 호출해도 기존 상세 이미지가 남아 있을 수 있으므로
-         * 단건 API에서는 항상 전체 상세 갱신을 수행한다.
-         */
         return syncFestivalContentDetail(contentId);
     }
 
@@ -368,7 +378,8 @@ public class FestivalSyncService {
 
         if (!syncRunning.compareAndSet(false, true)) {
             return emptySyncResponse(
-                    "축제·체험 동기화가 이미 실행 중입니다. 기존 요청이 끝난 뒤 다시 실행하세요."
+                    "축제·체험 동기화가 이미 실행 중입니다. "
+                            + "기존 요청이 끝난 뒤 다시 실행하세요."
             );
         }
 
@@ -379,19 +390,22 @@ public class FestivalSyncService {
 
             if (content == null) {
                 return emptySyncResponse(
-                        "DB에 저장된 콘텐츠가 없습니다. 목록 동기화 후 다시 실행하세요."
+                        "DB에 저장된 콘텐츠가 없습니다. "
+                                + "목록 동기화 후 다시 실행하세요."
                 );
             }
 
             LocalDateTime syncedAt = LocalDateTime.now();
             SyncCounter counter = new SyncCounter();
+
             Map<FestivalSyncGroup, GroupSyncWork> groupWorkMap =
                     createGroupWorkMap();
 
             FestivalSyncGroup group = resolveGroup(content);
+
             groupWorkMap.get(group).addDetailTask(
                     new DetailTask(
-                            contentId,
+                            content.getContentId(),
                             content.getContentTypeId(),
                             content.getSourceUpdatedAt(),
                             DetailTaskType.FULL
@@ -435,13 +449,15 @@ public class FestivalSyncService {
     ) {
         if (!syncRunning.compareAndSet(false, true)) {
             return emptySyncResponse(
-                    "축제·체험 동기화가 이미 실행 중입니다. 기존 요청이 끝난 뒤 다시 실행하세요."
+                    "축제·체험 동기화가 이미 실행 중입니다. "
+                            + "기존 요청이 끝난 뒤 다시 실행하세요."
             );
         }
 
         try {
             LocalDateTime syncedAt = LocalDateTime.now();
             SyncCounter counter = new SyncCounter();
+
             Map<FestivalSyncGroup, GroupSyncWork> groupWorkMap =
                     createGroupWorkMap();
 
@@ -454,10 +470,8 @@ public class FestivalSyncService {
                             counter
                     );
 
-            GroupSyncWork festivalWork = groupWorkMap.get(
-                    FestivalSyncGroup.FESTIVAL
-            );
-            festivalWork.addApiCallCount(eventFetchResult.apiCallCount());
+            groupWorkMap.get(FestivalSyncGroup.FESTIVAL)
+                    .addApiCallCount(eventFetchResult.apiCallCount());
 
             for (SourceItem<FestivalSummaryResponse> sourceItem
                     : eventFetchResult.items()) {
@@ -465,22 +479,28 @@ public class FestivalSyncService {
                         sourceItem.item()
                 );
 
-                GroupSyncWork work = groupWorkMap.get(group);
-                work.increaseTargetCount();
+                GroupSyncWork groupWork = groupWorkMap.get(group);
+
+                groupWork.increaseTargetCount();
 
                 SummarySaveResult saveResult = saveFestivalSummary(
                         sourceItem,
                         syncedAt,
                         request.includeDetail(),
-                        request.forceAllDetails(),
-                        counter
+                        request.forceAllDetails()
                 );
 
-                if (saveResult.saved()) {
-                    work.increaseMainSyncedCount();
-                }
+                increaseSummaryCounter(
+                        saveResult,
+                        counter,
+                        true
+                );
 
-                work.addDetailTask(saveResult.detailTask());
+                groupWork.addDetailTask(saveResult.detailTask());
+
+                if (saveResult.saved()) {
+                    groupWork.increaseMainSyncedCount();
+                }
             }
 
             Map<FestivalSyncGroup, FetchResult<ExperienceSummaryResponse>>
@@ -502,26 +522,33 @@ public class FestivalSyncService {
 
                 experienceFetchResults.put(group, fetchResult);
 
-                GroupSyncWork work = groupWorkMap.get(group);
-                work.addApiCallCount(fetchResult.apiCallCount());
+                GroupSyncWork groupWork = groupWorkMap.get(group);
+
+                groupWork.addApiCallCount(fetchResult.apiCallCount());
 
                 for (SourceItem<ExperienceSummaryResponse> sourceItem
                         : fetchResult.items()) {
-                    work.increaseTargetCount();
+                    groupWork.increaseTargetCount();
 
-                    SummarySaveResult saveResult = saveExperienceSummary(
-                            sourceItem,
-                            syncedAt,
-                            request.includeDetail(),
-                            request.forceAllDetails(),
-                            counter
+                    SummarySaveResult saveResult =
+                            saveExperienceSummary(
+                                    sourceItem,
+                                    syncedAt,
+                                    request.includeDetail(),
+                                    request.forceAllDetails()
+                            );
+
+                    increaseSummaryCounter(
+                            saveResult,
+                            counter,
+                            false
                     );
 
-                    if (saveResult.saved()) {
-                        work.increaseMainSyncedCount();
-                    }
+                    groupWork.addDetailTask(saveResult.detailTask());
 
-                    work.addDetailTask(saveResult.detailTask());
+                    if (saveResult.saved()) {
+                        groupWork.increaseMainSyncedCount();
+                    }
                 }
             }
 
@@ -613,7 +640,9 @@ public class FestivalSyncService {
             int maxApiCalls,
             SyncCounter counter
     ) {
-        List<SourceItem<FestivalSummaryResponse>> items = new ArrayList<>();
+        List<SourceItem<FestivalSummaryResponse>> items =
+                new ArrayList<>();
+
         Set<String> contentIds = new LinkedHashSet<>();
 
         int totalPages = 1;
@@ -623,10 +652,16 @@ public class FestivalSyncService {
         boolean completed = true;
 
         for (int page = 1; page <= totalPages; page++) {
-            if (page > maxPages || !canCallApi(counter, maxApiCalls, 1)) {
+            if (page > maxPages || !canCallApi(
+                    counter,
+                    maxApiCalls,
+                    1
+            )) {
                 completed = false;
                 break;
             }
+
+            int beforeCallCount = counter.tourApiCallCount();
 
             ApiResponse response = requestFestivalListRaw(
                     page,
@@ -634,14 +669,18 @@ public class FestivalSyncService {
                     eventStartDate,
                     counter
             );
-            apiCallCount++;
+
+            apiCallCount += counter.tourApiCallCount()
+                    - beforeCallCount;
 
             if (!response.success()) {
                 completed = false;
                 break;
             }
 
-            int pageTotalCount = readTourApiTotalCount(response.rawJson());
+            int pageTotalCount = readTourApiTotalCount(
+                    response.rawJson()
+            );
 
             if (pageTotalCount < 0) {
                 completed = false;
@@ -675,10 +714,11 @@ public class FestivalSyncService {
                     continue;
                 }
 
-                items.add(new SourceItem(
+                items.add(new SourceItem<>(
                         item,
                         modifiedTimeMap.get(item.getId())
                 ));
+
                 contentIds.add(item.getId());
             }
 
@@ -707,7 +747,9 @@ public class FestivalSyncService {
             int maxApiCalls,
             SyncCounter counter
     ) {
-        List<SourceItem<ExperienceSummaryResponse>> items = new ArrayList<>();
+        List<SourceItem<ExperienceSummaryResponse>> items =
+                new ArrayList<>();
+
         Set<String> contentIds = new LinkedHashSet<>();
 
         int totalPages = 1;
@@ -717,10 +759,16 @@ public class FestivalSyncService {
         boolean completed = true;
 
         for (int page = 1; page <= totalPages; page++) {
-            if (page > maxPages || !canCallApi(counter, maxApiCalls, 1)) {
+            if (page > maxPages || !canCallApi(
+                    counter,
+                    maxApiCalls,
+                    1
+            )) {
                 completed = false;
                 break;
             }
+
+            int beforeCallCount = counter.tourApiCallCount();
 
             ApiResponse response = requestExperienceListRaw(
                     page,
@@ -728,14 +776,18 @@ public class FestivalSyncService {
                     contentTypeId,
                     counter
             );
-            apiCallCount++;
+
+            apiCallCount += counter.tourApiCallCount()
+                    - beforeCallCount;
 
             if (!response.success()) {
                 completed = false;
                 break;
             }
 
-            int pageTotalCount = readTourApiTotalCount(response.rawJson());
+            int pageTotalCount = readTourApiTotalCount(
+                    response.rawJson()
+            );
 
             if (pageTotalCount < 0) {
                 completed = false;
@@ -769,10 +821,11 @@ public class FestivalSyncService {
                     continue;
                 }
 
-                items.add(new SourceItem(
+                items.add(new SourceItem<>(
                         item,
                         modifiedTimeMap.get(item.getId())
                 ));
+
                 contentIds.add(item.getId());
             }
 
@@ -798,8 +851,7 @@ public class FestivalSyncService {
             SourceItem<FestivalSummaryResponse> sourceItem,
             LocalDateTime syncedAt,
             boolean includeDetail,
-            boolean forceAllDetails,
-            SyncCounter counter
+            boolean forceAllDetails
     ) {
         FestivalSummaryResponse item = sourceItem.item();
 
@@ -852,22 +904,17 @@ public class FestivalSyncService {
             );
         }
 
-        festivalContentRepository.save(content);
-
-        if (inserted) {
-            counter.increaseInsertedCount();
-        } else {
-            counter.increaseUpdatedCount();
-        }
-        counter.increaseFestivalSavedCount();
+        FestivalContent savedContent = festivalContentRepository.save(content);
 
         return new SummarySaveResult(
                 true,
+                inserted,
                 createDetailTask(
-                        content,
+                        savedContent,
                         includeDetail,
                         forceAllDetails,
-                        sourceItem.sourceUpdatedAt()
+                        sourceItem.sourceUpdatedAt(),
+                        syncedAt
                 )
         );
     }
@@ -876,8 +923,7 @@ public class FestivalSyncService {
             SourceItem<ExperienceSummaryResponse> sourceItem,
             LocalDateTime syncedAt,
             boolean includeDetail,
-            boolean forceAllDetails,
-            SyncCounter counter
+            boolean forceAllDetails
     ) {
         ExperienceSummaryResponse item = sourceItem.item();
 
@@ -930,37 +976,57 @@ public class FestivalSyncService {
             );
         }
 
-        festivalContentRepository.save(content);
+        FestivalContent savedContent = festivalContentRepository.save(content);
 
-        if (inserted) {
+        return new SummarySaveResult(
+                true,
+                inserted,
+                createDetailTask(
+                        savedContent,
+                        includeDetail,
+                        forceAllDetails,
+                        sourceItem.sourceUpdatedAt(),
+                        syncedAt
+                )
+        );
+    }
+
+    private void increaseSummaryCounter(
+            SummarySaveResult saveResult,
+            SyncCounter counter,
+            boolean festival
+    ) {
+        if (!saveResult.saved()) {
+            return;
+        }
+
+        if (festival) {
+            counter.increaseFestivalSavedCount();
+        } else {
+            counter.increaseExperienceSavedCount();
+        }
+
+        if (saveResult.inserted()) {
             counter.increaseInsertedCount();
         } else {
             counter.increaseUpdatedCount();
         }
-        counter.increaseExperienceSavedCount();
-
-        return new SummarySaveResult(
-                true,
-                createDetailTask(
-                        content,
-                        includeDetail,
-                        forceAllDetails,
-                        sourceItem.sourceUpdatedAt()
-                )
-        );
     }
 
     private DetailTask createDetailTask(
             FestivalContent content,
             boolean includeDetail,
             boolean forceAllDetails,
-            LocalDateTime sourceUpdatedAt
+            LocalDateTime sourceUpdatedAt,
+            LocalDateTime now
     ) {
-        if (!includeDetail || content == null || !hasText(content.getContentId())) {
+        if (!includeDetail
+                || content == null
+                || !hasText(content.getContentId())) {
             return null;
         }
 
-        if (forceAllDetails || !hasDetailContent(content)) {
+        if (forceAllDetails) {
             return new DetailTask(
                     content.getContentId(),
                     content.getContentTypeId(),
@@ -969,7 +1035,34 @@ public class FestivalSyncService {
             );
         }
 
+        /*
+         * 원본 수정 시각이 더 최신이면 재시도 대기 상태보다 우선한다.
+         */
         if (isSourceModifiedAfterDetail(content, sourceUpdatedAt)) {
+            return new DetailTask(
+                    content.getContentId(),
+                    content.getContentTypeId(),
+                    sourceUpdatedAt,
+                    DetailTaskType.FULL
+            );
+        }
+
+        if (content.isDetailRetryScheduled(now)) {
+            return null;
+        }
+
+        if (content.isDetailRetryDue(now)) {
+            return new DetailTask(
+                    content.getContentId(),
+                    content.getContentTypeId(),
+                    sourceUpdatedAt,
+                    content.isImageOnlyRetry()
+                            ? DetailTaskType.IMAGE_ONLY
+                            : DetailTaskType.FULL
+            );
+        }
+
+        if (!hasDetailContent(content)) {
             return new DetailTask(
                     content.getContentId(),
                     content.getContentTypeId(),
@@ -993,11 +1086,12 @@ public class FestivalSyncService {
     private void addStoredDetailTargets(
             Map<FestivalSyncGroup, GroupSyncWork> groupWorkMap,
             boolean onlyMissing,
-            int limit
+            int limit,
+            LocalDateTime now
     ) {
         List<FestivalContent> contents = festivalContentRepository
                 .findAllByActiveTrueAndContentTypeIdIn(
-                        List.of("12", "14", "15", "28")
+                        SUPPORTED_CONTENT_TYPE_IDS
                 );
 
         int addedCount = 0;
@@ -1016,26 +1110,23 @@ public class FestivalSyncService {
                         content.getSourceUpdatedAt(),
                         DetailTaskType.FULL
                 );
-            } else if (!hasDetailContent(content)) {
-                task = new DetailTask(
-                        content.getContentId(),
-                        content.getContentTypeId(),
-                        content.getSourceUpdatedAt(),
-                        DetailTaskType.FULL
-                );
-            } else if (!Boolean.TRUE.equals(content.getImageSyncCompleted())) {
-                task = new DetailTask(
-                        content.getContentId(),
-                        content.getContentTypeId(),
-                        content.getSourceUpdatedAt(),
-                        DetailTaskType.IMAGE_ONLY
-                );
             } else {
+                task = createDetailTask(
+                        content,
+                        true,
+                        false,
+                        content.getSourceUpdatedAt(),
+                        now
+                );
+            }
+
+            if (task == null) {
                 continue;
             }
 
-            FestivalSyncGroup group = resolveGroup(content);
-            groupWorkMap.get(group).addDetailTask(task);
+            groupWorkMap.get(resolveGroup(content))
+                    .addDetailTask(task);
+
             addedCount++;
         }
     }
@@ -1066,9 +1157,12 @@ public class FestivalSyncService {
                 hasRemainingTask = true;
 
                 DetailTask task = work.detailTasks().get(nextIndex);
-                int requiredApiCalls = task.type().requiredApiCalls();
 
-                if (!canCallApi(counter, maxApiCalls, requiredApiCalls)) {
+                if (!canCallApi(
+                        counter,
+                        maxApiCalls,
+                        task.type().requiredApiCalls()
+                )) {
                     markRemainingTasksSkipped(
                             groupWorkMap,
                             nextIndexMap,
@@ -1078,33 +1172,41 @@ public class FestivalSyncService {
                 }
 
                 CounterSnapshot before = CounterSnapshot.from(counter);
+
                 DetailSyncOutcome outcome = syncDetailSafely(
                         task,
                         syncedAt,
                         counter
                 );
+
                 CounterSnapshot after = CounterSnapshot.from(counter);
 
                 work.addApiCallCount(
-                        after.tourApiCallCount() - before.tourApiCallCount()
+                        after.tourApiCallCount()
+                                - before.tourApiCallCount()
                 );
+
                 nextIndexMap.put(group, nextIndex + 1);
 
                 switch (outcome) {
                     case SUCCESS -> work.increaseDetailSyncedCount();
+
                     case COMMON_ONLY -> {
                         work.increaseDetailSyncedCount();
                         work.increaseDetailEmptyCount();
                         counter.increaseDetailEmptyCount();
                     }
+
                     case EMPTY -> {
                         work.increaseDetailEmptyCount();
                         counter.increaseDetailEmptyCount();
                     }
+
                     case PARTIAL -> {
                         work.increaseDetailSyncedCount();
                         work.increaseFailedCount();
                     }
+
                     case FAILURE -> work.increaseFailedCount();
                 }
             }
@@ -1123,6 +1225,7 @@ public class FestivalSyncService {
         for (FestivalSyncGroup group : FestivalSyncGroup.orderedGroups()) {
             GroupSyncWork work = groupWorkMap.get(group);
             int nextIndex = nextIndexMap.get(group);
+
             int remainingCount = Math.max(
                     work.detailTasks().size() - nextIndex,
                     0
@@ -1149,10 +1252,24 @@ public class FestivalSyncService {
 
             return syncFullDetail(task, syncedAt, counter);
         } catch (DataAccessException e) {
+            recordDetailRetry(
+                    task.contentId(),
+                    FestivalDetailRetryReason.DETAIL_SAVE_FAILED,
+                    syncedAt
+            );
+
             counter.increaseFailedRequestCount();
+
             return DetailSyncOutcome.FAILURE;
         } catch (RuntimeException e) {
+            recordDetailRetry(
+                    task.contentId(),
+                    FestivalDetailRetryReason.DETAIL_SAVE_FAILED,
+                    syncedAt
+            );
+
             counter.increaseFailedRequestCount();
+
             return DetailSyncOutcome.FAILURE;
         }
     }
@@ -1168,16 +1285,25 @@ public class FestivalSyncService {
         );
 
         if (!commonResponse.success()) {
+            if (!commonResponse.quotaExceeded()) {
+                recordDetailRetry(
+                        task.contentId(),
+                        FestivalDetailRetryReason
+                                .DETAIL_COMMON_REQUEST_FAILED,
+                        syncedAt
+                );
+            }
+
             return DetailSyncOutcome.FAILURE;
         }
 
         if (!festivalMapper.hasDetailItem(commonResponse.rawJson())) {
-            markDetailCommonUnavailable(
+            recordDetailRetry(
                     task.contentId(),
-                    task.sourceUpdatedAt(),
-                    syncedAt,
-                    counter
+                    FestivalDetailRetryReason.DETAIL_COMMON_EMPTY,
+                    syncedAt
             );
+
             return DetailSyncOutcome.EMPTY;
         }
 
@@ -1185,22 +1311,44 @@ public class FestivalSyncService {
                 .findByContentId(task.contentId())
                 .orElse(null);
 
-        String contentTypeId = firstNonBlank(
+        String expectedContentTypeId = firstNonBlank(
                 task.contentTypeId(),
                 existingContent == null
                         ? ""
                         : existingContent.getContentTypeId(),
-                festivalMapper.extractContentTypeId(commonResponse.rawJson()),
-                DEFAULT_FESTIVAL_CONTENT_TYPE_ID
+                festivalMapper.extractContentTypeId(
+                        commonResponse.rawJson()
+                )
         );
+
+        if (!SupportedContentType.isSupported(expectedContentTypeId)) {
+            recordDetailRetry(
+                    task.contentId(),
+                    FestivalDetailRetryReason.DETAIL_RESPONSE_INVALID,
+                    syncedAt
+            );
+
+            counter.increaseFailedRequestCount();
+
+            return DetailSyncOutcome.FAILURE;
+        }
 
         ApiResponse introResponse = requestDetailIntroRaw(
                 task.contentId(),
-                contentTypeId,
+                expectedContentTypeId,
                 counter
         );
 
         if (!introResponse.success()) {
+            if (!introResponse.quotaExceeded()) {
+                recordDetailRetry(
+                        task.contentId(),
+                        FestivalDetailRetryReason
+                                .DETAIL_INTRO_REQUEST_FAILED,
+                        syncedAt
+                );
+            }
+
             return DetailSyncOutcome.FAILURE;
         }
 
@@ -1210,6 +1358,7 @@ public class FestivalSyncService {
         );
 
         boolean imageSynced = imageResponse.success();
+
         boolean hasIntroItem = festivalMapper.hasDetailItem(
                 introResponse.rawJson()
         );
@@ -1222,6 +1371,22 @@ public class FestivalSyncService {
                         "",
                         task.contentId()
                 );
+
+        if (!isPersistableDetailResponse(
+                detailResponse,
+                task,
+                expectedContentTypeId
+        )) {
+            recordDetailRetry(
+                    task.contentId(),
+                    FestivalDetailRetryReason.DETAIL_RESPONSE_INVALID,
+                    syncedAt
+            );
+
+            counter.increaseFailedRequestCount();
+
+            return DetailSyncOutcome.FAILURE;
+        }
 
         saveDetail(
                 detailResponse,
@@ -1251,6 +1416,15 @@ public class FestivalSyncService {
         );
 
         if (!imageResponse.success()) {
+            if (!imageResponse.quotaExceeded()) {
+                recordDetailRetry(
+                        task.contentId(),
+                        FestivalDetailRetryReason
+                                .DETAIL_IMAGE_REQUEST_FAILED,
+                        syncedAt
+                );
+            }
+
             return DetailSyncOutcome.FAILURE;
         }
 
@@ -1262,6 +1436,38 @@ public class FestivalSyncService {
         );
 
         return DetailSyncOutcome.SUCCESS;
+    }
+
+    /*
+     * Mapper가 빈 DTO나 기본 타입 15 DTO를 만들더라도,
+     * 저장 직전 검증에서 차단한다.
+     */
+    private boolean isPersistableDetailResponse(
+            FestivalDetailResponse detailResponse,
+            DetailTask task,
+            String expectedContentTypeId
+    ) {
+        if (detailResponse == null
+                || !hasText(detailResponse.getId())
+                || !hasText(detailResponse.getContentTypeId())
+                || !hasText(detailResponse.getTitle())) {
+            return false;
+        }
+
+        if (!task.contentId().equals(detailResponse.getId())) {
+            return false;
+        }
+
+        if (!SupportedContentType.isSupported(
+                detailResponse.getContentTypeId()
+        )) {
+            return false;
+        }
+
+        return !hasText(expectedContentTypeId)
+                || expectedContentTypeId.equals(
+                detailResponse.getContentTypeId()
+        );
     }
 
     private void saveDetail(
@@ -1279,6 +1485,7 @@ public class FestivalSyncService {
                     .findByContentId(detail.getId())
                     .orElseGet(() -> {
                         counter.increaseInsertedCount();
+
                         return FestivalContent.builder()
                                 .contentId(detail.getId())
                                 .active(true)
@@ -1326,7 +1533,18 @@ public class FestivalSyncService {
                     imageSynced
             );
 
+            if (imageSynced) {
+                content.clearDetailRetry();
+            } else {
+                content.recordDetailRetry(
+                        FestivalDetailRetryReason
+                                .DETAIL_IMAGE_REQUEST_FAILED,
+                        syncedAt
+                );
+            }
+
             festivalContentRepository.save(content);
+
             counter.increaseDetailSyncedCount();
         });
     }
@@ -1350,53 +1568,48 @@ public class FestivalSyncService {
                 return;
             }
 
-            FestivalDetailResponse mapped =
-                    festivalMapper.toFestivalDetailResponse(
-                            "",
-                            "",
-                            imageRawJson,
-                            "",
-                            contentId
-                    );
-
             content.updateImageInfo(
-                    toJson(mapped.getImageUrls()),
+                    toJson(extractImageUrls(
+                            imageRawJson,
+                            content.getImageUrl()
+                    )),
                     syncedAt
             );
 
             festivalContentRepository.save(content);
+
             counter.increaseUpdatedCount();
             counter.increaseDetailSyncedCount();
         });
     }
 
-    private void markDetailCommonUnavailable(
+    private void recordDetailRetry(
             String contentId,
-            LocalDateTime sourceUpdatedAt,
-            LocalDateTime syncedAt,
-            SyncCounter counter
+            FestivalDetailRetryReason reason,
+            LocalDateTime retryRequestedAt
     ) {
         TransactionTemplate transactionTemplate =
                 createRequiredNewTransactionTemplate();
 
-        transactionTemplate.executeWithoutResult(status -> {
-            FestivalContent content = festivalContentRepository
-                    .findByContentId(contentId)
-                    .orElse(null);
+        try {
+            transactionTemplate.executeWithoutResult(status -> {
+                FestivalContent content = festivalContentRepository
+                        .findByContentId(contentId)
+                        .orElse(null);
 
-            if (content == null) {
-                counter.increaseFailedRequestCount();
-                return;
-            }
+                if (content == null) {
+                    return;
+                }
 
-            content.markDetailCommonUnavailable(
-                    syncedAt,
-                    sourceUpdatedAt
-            );
+                content.recordDetailRetry(reason, retryRequestedAt);
 
-            festivalContentRepository.save(content);
-            counter.increaseUpdatedCount();
-        });
+                festivalContentRepository.save(content);
+            });
+        } catch (DataAccessException ignored) {
+            /*
+             * 재시도 상태 저장까지 실패해도 기존 상세 데이터는 그대로 둔다.
+             */
+        }
     }
 
     private TransactionTemplate createRequiredNewTransactionTemplate() {
@@ -1406,6 +1619,7 @@ public class FestivalSyncService {
         transactionTemplate.setPropagationBehavior(
                 TransactionDefinition.PROPAGATION_REQUIRES_NEW
         );
+
         transactionTemplate.setTimeout(20);
 
         return transactionTemplate;
@@ -1448,21 +1662,15 @@ public class FestivalSyncService {
             String eventStartDate,
             SyncCounter counter
     ) {
-        counter.increaseTourApiCallCount();
-
-        try {
-            String rawJson = tourApiClient.getFestivalListRaw(
-                    page,
-                    size,
-                    eventStartDate,
-                    null
-            );
-
-            return validateApiResponse(rawJson, counter);
-        } catch (RestClientException e) {
-            counter.increaseFailedRequestCount();
-            return ApiResponse.failed();
-        }
+        return executeTourApiCall(
+                () -> tourApiClient.getFestivalListRaw(
+                        page,
+                        size,
+                        eventStartDate,
+                        null
+                ),
+                counter
+        );
     }
 
     private ApiResponse requestExperienceListRaw(
@@ -1471,38 +1679,27 @@ public class FestivalSyncService {
             String contentTypeId,
             SyncCounter counter
     ) {
-        counter.increaseTourApiCallCount();
-
-        try {
-            String rawJson = tourApiClient.getExperienceListRaw(
-                    page,
-                    size,
-                    null,
-                    contentTypeId
-            );
-
-            return validateApiResponse(rawJson, counter);
-        } catch (RestClientException e) {
-            counter.increaseFailedRequestCount();
-            return ApiResponse.failed();
-        }
+        return executeTourApiCall(
+                () -> tourApiClient.getExperienceListRaw(
+                        page,
+                        size,
+                        null,
+                        contentTypeId
+                ),
+                counter
+        );
     }
 
     private ApiResponse requestDetailCommonRaw(
             String contentId,
             SyncCounter counter
     ) {
-        counter.increaseTourApiCallCount();
-
-        try {
-            return validateApiResponse(
-                    tourApiClient.getFestivalDetailCommonRaw(contentId),
-                    counter
-            );
-        } catch (RestClientException e) {
-            counter.increaseFailedRequestCount();
-            return ApiResponse.failed();
-        }
+        return executeTourApiCall(
+                () -> tourApiClient.getFestivalDetailCommonRaw(
+                        contentId
+                ),
+                counter
+        );
     }
 
     private ApiResponse requestDetailIntroRaw(
@@ -1510,35 +1707,52 @@ public class FestivalSyncService {
             String contentTypeId,
             SyncCounter counter
     ) {
-        counter.increaseTourApiCallCount();
-
-        try {
-            return validateApiResponse(
-                    tourApiClient.getFestivalDetailIntroRaw(
-                            contentId,
-                            contentTypeId
-                    ),
-                    counter
-            );
-        } catch (RestClientException e) {
-            counter.increaseFailedRequestCount();
-            return ApiResponse.failed();
-        }
+        return executeTourApiCall(
+                () -> tourApiClient.getFestivalDetailIntroRaw(
+                        contentId,
+                        contentTypeId
+                ),
+                counter
+        );
     }
 
     private ApiResponse requestDetailImageRaw(
             String contentId,
             SyncCounter counter
     ) {
-        counter.increaseTourApiCallCount();
+        return executeTourApiCall(
+                () -> tourApiClient.getFestivalDetailImageRaw(
+                        contentId
+                ),
+                counter
+        );
+    }
+
+    private ApiResponse executeTourApiCall(
+            Supplier<String> apiCall,
+            SyncCounter counter
+    ) {
+        if (!hasAvailableDailyQuota(counter, 1)) {
+            return ApiResponse.quotaExceededResponse();
+        }
 
         try {
-            return validateApiResponse(
-                    tourApiClient.getFestivalDetailImageRaw(contentId),
-                    counter
-            );
+            String rawJson = apiCall.get();
+
+            counter.increaseTourApiCallCount();
+
+            return validateApiResponse(rawJson, counter);
+        } catch (TourApiQuotaExceededException e) {
+            counter.markDailyQuotaExceeded();
+
+            return ApiResponse.quotaExceededResponse();
         } catch (RestClientException e) {
+            /*
+             * API 요청 시도는 발생했으므로 실행 기준 호출 수에도 포함한다.
+             */
+            counter.increaseTourApiCallCount();
             counter.increaseFailedRequestCount();
+
             return ApiResponse.failed();
         }
     }
@@ -1549,6 +1763,7 @@ public class FestivalSyncService {
     ) {
         if (!hasText(rawJson) || !isTourApiSuccess(rawJson)) {
             counter.increaseFailedRequestCount();
+
             return ApiResponse.failed();
         }
 
@@ -1558,6 +1773,7 @@ public class FestivalSyncService {
     private boolean isTourApiSuccess(String rawJson) {
         try {
             JsonNode root = objectMapper.readTree(rawJson);
+
             String resultCode = root.path("response")
                     .path("header")
                     .path("resultCode")
@@ -1576,10 +1792,14 @@ public class FestivalSyncService {
 
         try {
             JsonNode body = getBody(rawJson);
+
             JsonNode itemNode = body.path("items").path("item");
 
             for (JsonNode item : toItemList(itemNode)) {
-                String contentId = item.path("contentid").asText("").trim();
+                String contentId = item.path("contentid")
+                        .asText("")
+                        .trim();
+
                 LocalDateTime modifiedAt = parseModifiedTime(
                         item.path("modifiedtime").asText("")
                 );
@@ -1595,8 +1815,49 @@ public class FestivalSyncService {
         return result;
     }
 
-    private JsonNode getBody(String rawJson) throws JsonProcessingException {
+    private List<String> extractImageUrls(
+            String rawJson,
+            String fallbackImageUrl
+    ) {
+        Set<String> imageUrlSet = new LinkedHashSet<>();
+
+        if (hasText(fallbackImageUrl)) {
+            imageUrlSet.add(fallbackImageUrl.trim());
+        }
+
+        try {
+            JsonNode body = getBody(rawJson);
+
+            JsonNode itemNode = body.path("items").path("item");
+
+            for (JsonNode item : toItemList(itemNode)) {
+                String originalImageUrl = item.path("originimgurl")
+                        .asText("")
+                        .trim();
+
+                String smallImageUrl = item.path("smallimageurl")
+                        .asText("")
+                        .trim();
+
+                if (hasText(originalImageUrl)) {
+                    imageUrlSet.add(originalImageUrl);
+                }
+
+                if (hasText(smallImageUrl)) {
+                    imageUrlSet.add(smallImageUrl);
+                }
+            }
+        } catch (Exception ignored) {
+            return new ArrayList<>(imageUrlSet);
+        }
+
+        return new ArrayList<>(imageUrlSet);
+    }
+
+    private JsonNode getBody(String rawJson)
+            throws JsonProcessingException {
         JsonNode root = objectMapper.readTree(rawJson);
+
         JsonNode responseBody = root.path("response").path("body");
 
         if (!responseBody.isMissingNode() && !responseBody.isNull()) {
@@ -1615,7 +1876,9 @@ public class FestivalSyncService {
 
         if (itemNode.isArray()) {
             List<JsonNode> items = new ArrayList<>();
+
             itemNode.forEach(items::add);
+
             return items;
         }
 
@@ -1628,9 +1891,11 @@ public class FestivalSyncService {
 
     private int readTourApiTotalCount(String rawJson) {
         try {
-            JsonNode totalCountNode = getBody(rawJson).path("totalCount");
+            JsonNode totalCountNode = getBody(rawJson)
+                    .path("totalCount");
 
-            if (totalCountNode.isMissingNode() || totalCountNode.isNull()) {
+            if (totalCountNode.isMissingNode()
+                    || totalCountNode.isNull()) {
                 return -1;
             }
 
@@ -1708,8 +1973,6 @@ public class FestivalSyncService {
         return hasText(content.getOverview())
                 || hasText(content.getHomepage())
                 || hasText(content.getDescription())
-                || safe(content.getDescriptionSource())
-                .startsWith("DETAIL_COMMON")
                 || hasMeaningfulJsonArray(content.getMainInfoJson())
                 || content.getDetailSourceUpdatedAt() != null;
     }
@@ -1725,26 +1988,15 @@ public class FestivalSyncService {
         LocalDateTime detailSourceUpdatedAt =
                 content.getDetailSourceUpdatedAt();
 
-        return detailSourceUpdatedAt != null
-                && sourceUpdatedAt.isAfter(detailSourceUpdatedAt);
-    }
-
-    private void deactivateMissingContents(
-            String contentTypeId,
-            Set<String> currentContentIds,
-            SyncCounter counter
-    ) {
-        deactivateMissingContents(
-                contentTypeId,
-                (Collection<String>) currentContentIds,
-                counter
-        );
+        return detailSourceUpdatedAt == null
+                || sourceUpdatedAt.isAfter(detailSourceUpdatedAt);
     }
 
     private List<FestivalSyncGroupResultResponse> buildGroupResults(
             Map<FestivalSyncGroup, GroupSyncWork> groupWorkMap
     ) {
-        List<FestivalSyncGroupResultResponse> results = new ArrayList<>();
+        List<FestivalSyncGroupResultResponse> results =
+                new ArrayList<>();
 
         for (FestivalSyncGroup group : FestivalSyncGroup.orderedGroups()) {
             GroupSyncWork work = groupWorkMap.get(group);
@@ -1793,6 +2045,9 @@ public class FestivalSyncService {
             String message,
             List<FestivalSyncGroupResultResponse> groupResults
     ) {
+        TourApiQuotaService.QuotaSnapshot quotaSnapshot =
+                tourApiQuotaService.getTodayQuotaSnapshot();
+
         return FestivalSyncResultResponse.builder()
                 .festivalSavedCount(counter.festivalSavedCount())
                 .experienceSavedCount(counter.experienceSavedCount())
@@ -1820,11 +2075,24 @@ public class FestivalSyncService {
                 .sequential(sequential)
                 .eventStartDate(eventStartDate)
                 .message(message)
-                .groupResults(groupResults == null ? List.of() : groupResults)
+                .quotaUsageDate(quotaSnapshot.usageDate())
+                .dailyTourApiLimit(quotaSnapshot.dailyCallLimit())
+                .dailyTourApiUsedCount(quotaSnapshot.usedCallCount())
+                .dailyTourApiRemainingCount(
+                        quotaSnapshot.remainingCallCount()
+                )
+                .dailyQuotaExceeded(counter.dailyQuotaExceeded())
+                .groupResults(
+                        groupResults == null
+                                ? List.of()
+                                : groupResults
+                )
                 .build();
     }
 
-    private FestivalSyncResultResponse emptySyncResponse(String message) {
+    private FestivalSyncResultResponse emptySyncResponse(
+            String message
+    ) {
         return buildResponse(
                 new SyncCounter(),
                 0,
@@ -1854,38 +2122,59 @@ public class FestivalSyncService {
             boolean deactivationDeferred,
             SyncCounter counter
     ) {
+        if (counter.dailyQuotaExceeded()) {
+            return "오늘 TourAPI 일일 호출 예산이 부족해 남은 목록 또는 상세 작업을 "
+                    + "보류했습니다. 다음 날 자동 refresh에서 이어서 처리합니다.";
+        }
+
         if (counter.failedRequestCount() > 0) {
-            return "일부 TourAPI 또는 DB 저장 요청이 실패했습니다. 성공한 목록과 상세만 반영했고, 실패·이미지 미완료 대상은 다음 새벽에 재시도합니다.";
+            return "일부 TourAPI 또는 DB 저장 요청이 실패했습니다. "
+                    + "기존 데이터는 유지했고 실패 대상은 재시도 예정 시각 이후에 "
+                    + "다시 처리합니다.";
         }
 
         if (request.deactivateMissing() && deactivationDeferred) {
-            return "목록은 저장했지만 페이지 수집 또는 원본 totalCount 검증이 완전하지 않아 비활성화 처리를 보류했습니다.";
+            return "목록은 저장했지만 페이지 수집 또는 원본 totalCount 검증이 "
+                    + "완전하지 않아 비활성화 처리를 보류했습니다.";
         }
 
         if (counter.skippedDetailCount() > 0) {
-            return "목록 갱신을 완료했고, 호출 예산 제한으로 남은 상세 대상은 다음 새벽에 그룹 순환 방식으로 이어서 처리합니다.";
+            return "목록 갱신을 완료했고, 실행 호출 예산 제한으로 남은 상세 대상은 "
+                    + "다음 실행에서 이어서 처리합니다.";
         }
 
         if (counter.detailEmptyCount() > 0) {
-            return "목록 갱신을 완료했습니다. 일부 콘텐츠는 원본 상세 공통 또는 유형별 정보가 비어 있어 제공 가능한 정보만 저장했습니다.";
+            return "목록 갱신을 완료했습니다. 일부 콘텐츠의 원본 상세 정보가 "
+                    + "비어 있어 재시도 예정 시각 이후에 다시 확인합니다.";
         }
 
-        if (request.deactivateMissing() && deactivationApplied && allListsSafe) {
-            return "새벽 자동 refresh를 완료했습니다. 목록 갱신, 변경 상세 갱신, 안전한 비활성화 처리가 완료되었습니다.";
+        if (request.deactivateMissing()
+                && deactivationApplied
+                && allListsSafe) {
+            return "새벽 자동 refresh를 완료했습니다. 목록 갱신, 변경 상세 갱신, "
+                    + "안전한 비활성화 처리가 완료되었습니다.";
         }
 
         return request.automatic()
-                ? "새벽 자동 refresh를 완료했습니다. 변경된 콘텐츠와 미완료 이미지만 보강했습니다."
+                ? "새벽 자동 refresh를 완료했습니다. 변경된 콘텐츠와 "
+                + "미완료 이미지만 보강했습니다."
                 : "축제·체험 동기화를 완료했습니다.";
     }
 
     private String buildDetailOnlyMessage(SyncCounter counter) {
+        if (counter.dailyQuotaExceeded()) {
+            return "오늘 TourAPI 일일 호출 예산이 부족해 남은 상세 작업을 "
+                    + "보류했습니다. 다음 실행에서 이어서 처리합니다.";
+        }
+
         if (counter.failedRequestCount() > 0) {
-            return "상세 보강 중 일부 요청이 실패했습니다. 실패한 대상은 다음 실행에서 다시 처리합니다.";
+            return "상세 보강 중 일부 요청이 실패했습니다. 기존 데이터는 유지했고 "
+                    + "실패 대상은 재시도 예정 시각 이후에 다시 처리합니다.";
         }
 
         if (counter.skippedDetailCount() > 0) {
-            return "상세 보강은 호출 예산까지 처리했고 남은 대상은 다음 실행에서 이어서 처리합니다.";
+            return "상세 보강은 실행 호출 예산까지 처리했고 남은 대상은 "
+                    + "다음 실행에서 이어서 처리합니다.";
         }
 
         return "상세 및 이미지 보강을 완료했습니다.";
@@ -1934,7 +2223,8 @@ public class FestivalSyncService {
     }
 
     private LocalDateTime parseModifiedTime(String value) {
-        if (!hasText(value) || !value.trim().matches("\\d{14}")) {
+        if (!hasText(value)
+                || !value.trim().matches("\\d{14}")) {
             return null;
         }
 
@@ -1953,7 +2243,29 @@ public class FestivalSyncService {
             int maxApiCalls,
             int requiredApiCalls
     ) {
-        return counter.tourApiCallCount() + requiredApiCalls <= maxApiCalls;
+        if (counter.tourApiCallCount() + requiredApiCalls
+                > maxApiCalls) {
+            return false;
+        }
+
+        if (!tourApiQuotaService.hasAvailableCalls(requiredApiCalls)) {
+            counter.markDailyQuotaExceeded();
+            return false;
+        }
+
+        return true;
+    }
+
+    private boolean hasAvailableDailyQuota(
+            SyncCounter counter,
+            int requiredApiCalls
+    ) {
+        if (tourApiQuotaService.hasAvailableCalls(requiredApiCalls)) {
+            return true;
+        }
+
+        counter.markDailyQuotaExceeded();
+        return false;
     }
 
     private int normalizeSize(int size) {
@@ -2059,10 +2371,11 @@ public class FestivalSyncService {
 
     private record SummarySaveResult(
             boolean saved,
+            boolean inserted,
             DetailTask detailTask
     ) {
         private static SummarySaveResult empty() {
-            return new SummarySaveResult(false, null);
+            return new SummarySaveResult(false, false, null);
         }
     }
 
@@ -2097,16 +2410,26 @@ public class FestivalSyncService {
         FAILURE
     }
 
+    /*
+     * quotaExceeded는 record의 boolean 접근자다.
+     * quotaExceededResponse()는 일일 예산 소진 응답을 만드는 static 메서드다.
+     * 이름 충돌이 나지 않도록 분리했다.
+     */
     private record ApiResponse(
             String rawJson,
-            boolean success
+            boolean success,
+            boolean quotaExceeded
     ) {
         private static ApiResponse success(String rawJson) {
-            return new ApiResponse(rawJson, true);
+            return new ApiResponse(rawJson, true, false);
         }
 
         private static ApiResponse failed() {
-            return new ApiResponse("", false);
+            return new ApiResponse("", false, false);
+        }
+
+        private static ApiResponse quotaExceededResponse() {
+            return new ApiResponse("", false, true);
         }
     }
 
@@ -2191,13 +2514,11 @@ public class FestivalSyncService {
         }
 
         public void addDetailTask(DetailTask task) {
-            if (task != null && hasValue(task.contentId())) {
+            if (task != null
+                    && task.contentId() != null
+                    && !task.contentId().isBlank()) {
                 detailTasks.add(task);
             }
-        }
-
-        private static boolean hasValue(String value) {
-            return value != null && !value.isBlank();
         }
     }
 
@@ -2213,6 +2534,7 @@ public class FestivalSyncService {
         private int skippedDetailCount;
         private int detailEmptyCount;
         private int failedRequestCount;
+        private boolean dailyQuotaExceeded;
 
         public int festivalSavedCount() {
             return festivalSavedCount;
@@ -2254,6 +2576,10 @@ public class FestivalSyncService {
             return failedRequestCount;
         }
 
+        public boolean dailyQuotaExceeded() {
+            return dailyQuotaExceeded;
+        }
+
         public void increaseFestivalSavedCount() {
             festivalSavedCount++;
         }
@@ -2292,6 +2618,10 @@ public class FestivalSyncService {
 
         public void increaseFailedRequestCount() {
             failedRequestCount++;
+        }
+
+        public void markDailyQuotaExceeded() {
+            dailyQuotaExceeded = true;
         }
     }
 }

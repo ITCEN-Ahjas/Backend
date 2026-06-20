@@ -20,8 +20,10 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @RequiredArgsConstructor
@@ -143,9 +145,14 @@ public class FestivalService {
     public FestivalDetailResponse getFestivalDetail(String contentId) {
         String validContentId = safe(contentId);
 
-        return festivalContentRepository.findByContentIdAndActiveTrue(validContentId)
+        return festivalContentRepository.findByContentIdAndActiveTrue(
+                        validContentId
+                )
                 .map(this::toFestivalDetailResponse)
-                .orElseGet(() -> emptyFestivalDetailResponse(validContentId));
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "콘텐츠를 찾을 수 없습니다."
+                ));
     }
 
     private FestivalSummaryResponse toFestivalSummaryResponse(
@@ -173,7 +180,9 @@ public class FestivalService {
                 .timeValue(safe(content.getTimeValue()))
                 .extraLabel(safe(content.getExtraLabel()))
                 .extraValue(safe(content.getExtraValue()))
-                .modifiedTime(formatSourceUpdatedAt(content.getSourceUpdatedAt()))
+                .modifiedTime(formatSourceUpdatedAt(
+                        content.getSourceUpdatedAt()
+                ))
                 .build();
     }
 
@@ -199,7 +208,9 @@ public class FestivalService {
                 .timeValue(safe(content.getTimeValue()))
                 .extraLabel(safe(content.getExtraLabel()))
                 .extraValue(safe(content.getExtraValue()))
-                .modifiedTime(formatSourceUpdatedAt(content.getSourceUpdatedAt()))
+                .modifiedTime(formatSourceUpdatedAt(
+                        content.getSourceUpdatedAt()
+                ))
                 .build();
     }
 
@@ -251,44 +262,6 @@ public class FestivalService {
                 .extraLabel(safe(content.getExtraLabel()))
                 .extraValue(safe(content.getExtraValue()))
                 .mainInfo(mainInfo)
-                .build();
-    }
-
-    private FestivalDetailResponse emptyFestivalDetailResponse(
-            String contentId
-    ) {
-        return FestivalDetailResponse.builder()
-                .id(safe(contentId))
-                .contentTypeId("")
-                .cat1("")
-                .cat2("")
-                .cat3("")
-                .title("")
-                .region("")
-                .category("")
-                .themeCategory("")
-                .status("")
-                .startDate("")
-                .endDate("")
-                .address("")
-                .imageUrl("")
-                .imageUrls(List.of())
-                .tel("")
-                .homepage("")
-                .overview("")
-                .description("")
-                .descriptionSource("")
-                .mapX("")
-                .mapY("")
-                .eventPlace("")
-                .playTime("")
-                .useTimeFestival("")
-                .sponsor("")
-                .timeLabel("")
-                .timeValue("")
-                .extraLabel("")
-                .extraValue("")
-                .mainInfo(List.of())
                 .build();
     }
 
@@ -361,7 +334,11 @@ public class FestivalService {
         List<ContentInfoResponse> mainInfo = new ArrayList<>();
 
         addMainInfo(mainInfo, content.getTimeLabel(), content.getTimeValue());
-        addMainInfo(mainInfo, content.getExtraLabel(), content.getExtraValue());
+        addMainInfo(
+                mainInfo,
+                content.getExtraLabel(),
+                content.getExtraValue()
+        );
         addMainInfo(mainInfo, "주소", content.getAddress());
         addMainInfo(mainInfo, "문의", content.getTel());
 
@@ -384,7 +361,8 @@ public class FestivalService {
     }
 
     private Specification<FestivalContent> alwaysTrue() {
-        return (root, query, criteriaBuilder) -> criteriaBuilder.conjunction();
+        return (root, query, criteriaBuilder) ->
+                criteriaBuilder.conjunction();
     }
 
     private Specification<FestivalContent> activeOnly() {
@@ -395,7 +373,8 @@ public class FestivalService {
     private Specification<FestivalContent> contentTypeEquals(
             String contentTypeId
     ) {
-        if (!hasText(contentTypeId) || "전체".equals(contentTypeId.trim())) {
+        if (!hasText(contentTypeId)
+                || "전체".equals(contentTypeId.trim())) {
             return alwaysTrue();
         }
 
@@ -409,7 +388,8 @@ public class FestivalService {
     private Specification<FestivalContent> experienceContentType(
             String contentTypeId
     ) {
-        if (hasText(contentTypeId) && !"전체".equals(contentTypeId.trim())) {
+        if (hasText(contentTypeId)
+                && !"전체".equals(contentTypeId.trim())) {
             return contentTypeEquals(contentTypeId);
         }
 
@@ -492,7 +472,9 @@ public class FestivalService {
                         criteriaBuilder.like(
                                 criteriaBuilder.lower(
                                         criteriaBuilder.coalesce(
-                                                root.get("themeCategory"),
+                                                root.get(
+                                                        "themeCategory"
+                                                ),
                                                 ""
                                         )
                                 ),
@@ -524,13 +506,17 @@ public class FestivalService {
             String category
     ) {
         String contentTypeResult =
-                SupportedContentType.resolveExperienceContentTypeId(contentTypeId);
+                SupportedContentType.resolveExperienceContentTypeId(
+                        contentTypeId
+                );
 
         if (hasText(contentTypeResult)) {
             return contentTypeResult;
         }
 
-        return SupportedContentType.resolveExperienceContentTypeId(category);
+        return SupportedContentType.resolveExperienceContentTypeId(
+                category
+        );
     }
 
     private int normalizePage(int page) {
