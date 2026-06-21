@@ -26,6 +26,7 @@ public class GooglePlaceDetailResponse {
     private String websiteUri;
     private OpeningHours regularOpeningHours;
     private GooglePlacesTextSearchResponse.LocalizedText editorialSummary;
+    private List<Review> reviews;
 
     @Getter
     @NoArgsConstructor
@@ -33,5 +34,29 @@ public class GooglePlaceDetailResponse {
     public static class OpeningHours {
 
         private List<String> weekdayDescriptions;
+    }
+
+    @Getter
+    @NoArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class Review {
+
+        private String name;
+        private String relativePublishTimeDescription;
+        private Integer rating;
+        private GooglePlacesTextSearchResponse.LocalizedText text;
+        private GooglePlacesTextSearchResponse.LocalizedText originalText;
+        private AuthorAttribution authorAttribution;
+        private String publishTime;
+    }
+
+    @Getter
+    @NoArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class AuthorAttribution {
+
+        private String displayName;
+        private String uri;
+        private String photoUri;
     }
 }
