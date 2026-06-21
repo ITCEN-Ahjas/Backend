@@ -3,6 +3,7 @@ package com.example.Chungbuk.global.exception;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -19,6 +20,19 @@ public class GlobalExceptionHandler {
                 HttpStatus.BAD_REQUEST,
                 "INVALID_REQUEST",
                 exception.getMessage(),
+                request
+        );
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleHttpMessageNotReadableException(
+            HttpMessageNotReadableException exception,
+            HttpServletRequest request
+    ) {
+        return createErrorResponse(
+                HttpStatus.BAD_REQUEST,
+                "INVALID_REQUEST",
+                "요청 본문 형식이 올바르지 않습니다.",
                 request
         );
     }
@@ -51,6 +65,19 @@ public class GlobalExceptionHandler {
                 HttpStatus.BAD_GATEWAY,
                 "GOOGLE_PLACES_API_ERROR",
                 "장소 검색 서비스에 일시적으로 연결할 수 없습니다.",
+                request
+        );
+    }
+
+    @ExceptionHandler(KmaWeatherApiException.class)
+    public ResponseEntity<ErrorResponse> handleKmaWeatherApiException(
+            KmaWeatherApiException exception,
+            HttpServletRequest request
+    ) {
+        return createErrorResponse(
+                HttpStatus.BAD_GATEWAY,
+                "KMA_WEATHER_API_ERROR",
+                "날씨 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.",
                 request
         );
     }
