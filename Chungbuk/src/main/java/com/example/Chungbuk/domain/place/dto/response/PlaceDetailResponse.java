@@ -28,4 +28,5 @@ public class PlaceDetailResponse {
     private String websiteUri;
     private List<String> weekdayDescriptions;
     private String summary;
+    private List<PlaceReviewResponse> reviews;
 }

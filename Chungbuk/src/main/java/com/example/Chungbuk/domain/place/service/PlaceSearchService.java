@@ -6,6 +6,7 @@ import com.example.Chungbuk.domain.place.dto.google.response.GooglePlaceDetailRe
 import com.example.Chungbuk.domain.place.dto.google.request.GooglePlacesTextSearchRequest;
 import com.example.Chungbuk.domain.place.dto.google.response.GooglePlacesTextSearchResponse;
 import com.example.Chungbuk.domain.place.dto.response.PlaceDetailResponse;
+import com.example.Chungbuk.domain.place.dto.response.PlaceReviewResponse;
 import com.example.Chungbuk.domain.place.dto.response.PlaceSearchResponse;
 import com.example.Chungbuk.domain.place.dto.response.PlaceSummaryResponse;
 import java.util.Collections;
@@ -165,6 +166,7 @@ public class PlaceSearchService {
                     .types(Collections.emptyList())
                     .photoNames(Collections.emptyList())
                     .weekdayDescriptions(Collections.emptyList())
+                    .reviews(Collections.emptyList())
                     .build();
         }
 
@@ -189,6 +191,7 @@ public class PlaceSearchService {
                 .websiteUri(detail.getWebsiteUri())
                 .weekdayDescriptions(getWeekdayDescriptions(detail.getRegularOpeningHours()))
                 .summary(getLocalizedText(detail.getEditorialSummary()))
+                .reviews(getReviews(detail.getReviews()))
                 .build();
     }
 
@@ -209,6 +212,35 @@ public class PlaceSearchService {
         }
 
         return openingHours.getWeekdayDescriptions();
+    }
+
+    private List<PlaceReviewResponse> getReviews(List<GooglePlaceDetailResponse.Review> reviews) {
+        if (reviews == null) {
+            return Collections.emptyList();
+        }
+
+        return reviews.stream()
+                .map(this::toPlaceReview)
+                .toList();
+    }
+
+    private PlaceReviewResponse toPlaceReview(GooglePlaceDetailResponse.Review review) {
+        GooglePlacesTextSearchResponse.LocalizedText text = review.getText();
+        GooglePlacesTextSearchResponse.LocalizedText originalText = review.getOriginalText();
+        GooglePlaceDetailResponse.AuthorAttribution author = review.getAuthorAttribution();
+
+        return PlaceReviewResponse.builder()
+                .reviewId(review.getName())
+                .authorName(author == null ? null : author.getDisplayName())
+                .authorUri(author == null ? null : author.getUri())
+                .authorPhotoUri(author == null ? null : author.getPhotoUri())
+                .rating(review.getRating())
+                .text(getLocalizedText(text))
+                .originalText(getLocalizedText(originalText))
+                .languageCode(text == null ? null : text.getLanguageCode())
+                .relativePublishTimeDescription(review.getRelativePublishTimeDescription())
+                .publishTime(review.getPublishTime())
+                .build();
     }
 
     private Double getLatitude(GooglePlacesTextSearchResponse.LatLng location) {

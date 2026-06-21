@@ -132,7 +132,7 @@ public class PlaceController {
 
     @Operation(
             summary = "장소 상세 조회",
-            description = "검색 결과의 placeId를 이용해 상세 페이지 구성에 필요한 장소 정보를 조회합니다."
+            description = "검색 결과의 placeId를 이용해 상세 페이지 구성에 필요한 장소 정보와 리뷰 목록을 조회합니다."
     )
     @ApiResponses({
             @ApiResponse(
