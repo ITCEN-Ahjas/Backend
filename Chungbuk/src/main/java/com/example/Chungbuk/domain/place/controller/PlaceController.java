@@ -91,11 +91,38 @@ public class PlaceController {
         return placeSearchService.search(keyword, category, size, pageToken);
     }
 
+    @Operation(
+            summary = "장소 사진 조회",
+            description = "Google Places 사진 리소스명(photoName)을 이용해 장소 사진 이미지를 조회합니다."
+    )
+    @ApiResponses({
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "장소 사진 조회 성공",
+                    content = @Content(
+                            mediaType = "image/*",
+                            schema = @Schema(type = "string", format = "binary")
+                    )
+            ),
+            @ApiResponse(
+                    responseCode = "400",
+                    description = "잘못된 사진 리소스명"
+            ),
+            @ApiResponse(
+                    responseCode = "502",
+                    description = "Google Places 사진 API 통신 실패"
+            )
+    })
     @GetMapping("/photo")
     public ResponseEntity<byte[]> getPlacePhoto(
+            @Parameter(
+                    description = "Google Places 사진 리소스명",
+                    example = "places/ChIJU01inBL0YzURDZHdPYSkIBw/photos/AaVG..."
+            )
             @RequestParam("name")
             String name,
 
+            @Parameter(description = "반환받을 이미지 최대 너비", example = "320")
             @RequestParam(defaultValue = "320")
             int maxWidthPx
     ) {
@@ -103,8 +130,31 @@ public class PlaceController {
         return placeSearchService.getPhotoMedia(name, maxWidthPx);
     }
 
+    @Operation(
+            summary = "장소 상세 조회",
+            description = "검색 결과의 placeId를 이용해 상세 페이지 구성에 필요한 장소 정보를 조회합니다."
+    )
+    @ApiResponses({
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "장소 상세 조회 성공",
+                    content = @Content(schema = @Schema(implementation = PlaceDetailResponse.class))
+            ),
+            @ApiResponse(
+                    responseCode = "400",
+                    description = "잘못된 장소 ID"
+            ),
+            @ApiResponse(
+                    responseCode = "502",
+                    description = "Google Places 상세 API 통신 실패"
+            )
+    })
     @GetMapping("/{placeId}")
     public PlaceDetailResponse getPlaceDetail(
+            @Parameter(
+                    description = "Google Places 장소 ID",
+                    example = "ChIJU01inBL0YzURDZHdPYSkIBw"
+            )
             @PathVariable
             String placeId
     ) {
