@@ -1,0 +1,64 @@
+@import './reset.css';
+
+:root {
+  --color-chungbuk-purple: #724598;
+  --color-chungbuk-cyan: #00aebb;
+  --color-chungbuk-dark-blue: #001655;
+
+  --color-page-bg: #f5f8fb;
+  --color-white: #ffffff;
+  --color-slate-50: #f8fafc;
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: #e2e8f0;
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-slate-600: #475569;
+  --color-slate-700: #334155;
+  --color-slate-800: #1e293b;
+  --color-slate-950: #020617;
+
+  --layout-max-width: 144rem;
+  --layout-side-padding: 4.8rem;
+}
+
+html {
+  font-size: 62.5%;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  overflow-x: hidden;
+  font-family:
+    Pretendard,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+  background-color: var(--color-page-bg);
+  color: var(--color-chungbuk-dark-blue);
+}
+
+#root {
+  min-height: 100vh;
+  width: 100%;
+  overflow-x: hidden;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+@media (max-width: 768px) {
+  :root {
+    --layout-side-padding: 2.4rem;
+  }
+}

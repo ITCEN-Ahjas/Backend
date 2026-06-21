@@ -1,0 +1,337 @@
+.page {
+  width: 100%;
+  max-width: var(--layout-max-width);
+  margin: 0 auto;
+  padding: 4rem var(--layout-side-padding) 5.6rem;
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  color: var(--color-slate-500);
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+
+.breadcrumb a:hover {
+  color: var(--color-chungbuk-purple);
+}
+
+.heroSection {
+  margin-top: 3.2rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(34rem, 0.85fr);
+  gap: 4rem;
+  align-items: center;
+}
+
+.heroImageBox {
+  min-height: 39rem;
+  overflow: hidden;
+  border-radius: 1.8rem;
+  background: var(--color-slate-100);
+  box-shadow: 0 1.6rem 4rem rgba(15, 23, 42, 0.12);
+}
+
+.heroImage {
+  width: 100%;
+  height: 100%;
+  min-height: 39rem;
+  object-fit: cover;
+}
+
+.heroFallback {
+  min-height: 39rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--color-chungbuk-purple), var(--color-chungbuk-cyan));
+  color: var(--color-white);
+  font-size: 2rem;
+  font-weight: 900;
+  letter-spacing: 0.2em;
+}
+
+.heroContent {
+  min-width: 0;
+}
+
+.badgeRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+}
+
+.categoryBadge,
+.themeBadge,
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  height: 3.8rem;
+  border-radius: 999px;
+  padding: 0 1.8rem;
+  color: var(--color-white);
+  font-size: 1.35rem;
+  font-weight: 900;
+}
+
+.categoryBadge {
+  background: var(--color-chungbuk-cyan);
+}
+
+.themeBadge {
+  background: var(--color-chungbuk-dark-blue);
+}
+
+.statusBadge {
+  background: var(--color-chungbuk-purple);
+}
+
+.heroContent h1 {
+  margin-top: 1.8rem;
+  color: var(--color-slate-950);
+  font-size: 4.6rem;
+  font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: 0;
+  word-break: keep-all;
+}
+
+.regionText {
+  margin-top: 1.2rem;
+  color: var(--color-slate-600);
+  font-size: 1.8rem;
+  font-weight: 800;
+}
+
+.heroIntroText {
+  margin-top: 2.2rem;
+  color: var(--color-slate-700);
+  font-size: 1.58rem;
+  font-weight: 650;
+  line-height: 1.9;
+  word-break: keep-all;
+}
+
+.section {
+  margin-top: 4.8rem;
+}
+
+.section h2 {
+  color: var(--color-slate-950);
+  font-size: 2.3rem;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.infoGrid {
+  margin-top: 2.4rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.2rem;
+}
+
+.infoItem {
+  min-height: 8.8rem;
+  padding: 1.8rem 2rem;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 1.2rem;
+  align-items: start;
+  border: 1px solid var(--color-slate-200);
+  border-radius: 1.2rem;
+  background: var(--color-white);
+}
+
+.infoIcon {
+  color: var(--color-chungbuk-purple);
+  font-size: 1.8rem;
+  font-weight: 900;
+  line-height: 1.4;
+}
+
+.infoItem strong {
+  color: var(--color-slate-500);
+  font-size: 1.25rem;
+  font-weight: 900;
+  line-height: 1.4;
+}
+
+.infoItem p {
+  grid-column: 2;
+  margin-top: 0.5rem;
+  color: var(--color-slate-950);
+  font-size: 1.42rem;
+  font-weight: 850;
+  line-height: 1.55;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.emptyInfoText {
+  margin-top: 2.4rem;
+  padding: 4rem 2.4rem;
+  border: 1px solid var(--color-slate-200);
+  border-radius: 1.8rem;
+  background: var(--color-white);
+  color: var(--color-slate-600);
+  font-size: 1.5rem;
+  font-weight: 850;
+  text-align: center;
+}
+
+.locationBox {
+  margin-top: 2.4rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42rem;
+  overflow: hidden;
+  border: 1px solid var(--color-slate-200);
+  border-radius: 1.8rem;
+  background: var(--color-white);
+}
+
+.mapPreview {
+  position: relative;
+  min-height: 25rem;
+  overflow: hidden;
+  background:
+    linear-gradient(110deg, transparent 49%, rgba(148, 163, 184, 0.16) 49% 51%, transparent 51%) 0
+      0 / 9rem 9rem,
+    linear-gradient(20deg, transparent 49%, rgba(148, 163, 184, 0.14) 49% 51%, transparent 51%) 0
+      0 / 12rem 12rem,
+    radial-gradient(circle at 24% 40%, rgba(0, 174, 187, 0.16), transparent 24rem),
+    radial-gradient(circle at 72% 46%, rgba(114, 69, 152, 0.12), transparent 18rem),
+    #f7fafc;
+}
+
+.mapPin {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--color-chungbuk-purple);
+  font-size: 4rem;
+  filter: drop-shadow(0 1rem 1.5rem rgba(114, 69, 152, 0.3));
+}
+
+.locationContent {
+  padding: 3.2rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-left: 1px solid var(--color-slate-200);
+}
+
+.locationContent strong {
+  color: var(--color-slate-950);
+  font-size: 1.8rem;
+  font-weight: 900;
+  line-height: 1.5;
+}
+
+.locationContent p {
+  margin-top: 1.2rem;
+  color: var(--color-slate-600);
+  font-size: 1.5rem;
+  font-weight: 750;
+  line-height: 1.6;
+}
+
+.addressText {
+  color: var(--color-slate-800) !important;
+}
+
+.outlineButton {
+  height: 5.8rem;
+  margin-top: 3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  border: 1px solid var(--color-chungbuk-purple);
+  border-radius: 1rem;
+  color: var(--color-chungbuk-purple);
+  font-size: 1.55rem;
+  font-weight: 900;
+}
+
+.bottomActions {
+  margin-top: 5.6rem;
+  display: grid;
+  grid-template-columns: 30rem minmax(0, 1fr);
+  gap: 3rem;
+}
+
+.backButton,
+.primaryButton {
+  height: 6.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  border-radius: 1rem;
+  font-size: 1.6rem;
+  font-weight: 900;
+}
+
+.backButton {
+  border: 1px solid var(--color-slate-200);
+  background: var(--color-white);
+  color: var(--color-slate-950);
+}
+
+.primaryButton {
+  background: var(--color-chungbuk-purple);
+  color: var(--color-white);
+}
+
+.stateBox {
+  min-height: 42rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-slate-200);
+  border-radius: 1.8rem;
+  background: var(--color-white);
+  color: var(--color-slate-600);
+  font-size: 1.6rem;
+  font-weight: 900;
+}
+
+@media (max-width: 1100px) {
+  .heroSection,
+  .locationBox {
+    grid-template-columns: 1fr;
+  }
+
+  .locationContent {
+    border-top: 1px solid var(--color-slate-200);
+    border-left: 0;
+  }
+
+  .infoGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .page {
+    padding-top: 2.8rem;
+  }
+
+  .heroContent h1 {
+    font-size: 3.4rem;
+  }
+
+  .heroImageBox,
+  .heroImage,
+  .heroFallback {
+    min-height: 27rem;
+  }
+
+  .infoGrid,
+  .bottomActions {
+    grid-template-columns: 1fr;
+  }
+}

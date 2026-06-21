@@ -2,13 +2,16 @@ package com.example.Chungbuk.domain.place.service;
 
 import com.example.Chungbuk.domain.place.client.GooglePlacesClient;
 import com.example.Chungbuk.domain.place.constant.PlaceCategory;
+import com.example.Chungbuk.domain.place.dto.google.response.GooglePlaceDetailResponse;
 import com.example.Chungbuk.domain.place.dto.google.request.GooglePlacesTextSearchRequest;
 import com.example.Chungbuk.domain.place.dto.google.response.GooglePlacesTextSearchResponse;
+import com.example.Chungbuk.domain.place.dto.response.PlaceDetailResponse;
 import com.example.Chungbuk.domain.place.dto.response.PlaceSearchResponse;
 import com.example.Chungbuk.domain.place.dto.response.PlaceSummaryResponse;
 import java.util.Collections;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -20,6 +23,9 @@ public class PlaceSearchService {
     private static final String DEFAULT_REGION_CODE = "KR";
     private static final int DEFAULT_PAGE_SIZE = 10;
     private static final int MAX_PAGE_SIZE = 20;
+    private static final int DEFAULT_PHOTO_WIDTH = 320;
+    private static final int MIN_PHOTO_WIDTH = 100;
+    private static final int MAX_PHOTO_WIDTH = 1200;
 
     private static final double CHUNGBUK_SOUTH_LATITUDE = 35.97;
     private static final double CHUNGBUK_WEST_LONGITUDE = 127.27;
@@ -59,6 +65,17 @@ public class PlaceSearchService {
                 .size(items.size())
                 .nextPageToken(googleResponse.getNextPageToken())
                 .build();
+    }
+
+    public ResponseEntity<byte[]> getPhotoMedia(String photoName, Integer maxWidthPx) {
+        return googlePlacesClient.getPhotoMedia(
+                photoName,
+                resolvePhotoWidth(maxWidthPx)
+        );
+    }
+
+    public PlaceDetailResponse getPlaceDetail(String placeId) {
+        return toPlaceDetail(googlePlacesClient.getPlaceDetail(placeId));
     }
 
     private GooglePlacesTextSearchRequest createSearchRequest(
@@ -142,12 +159,80 @@ public class PlaceSearchService {
         return photos.getFirst().getName();
     }
 
+    private PlaceDetailResponse toPlaceDetail(GooglePlaceDetailResponse detail) {
+        if (detail == null) {
+            return PlaceDetailResponse.builder()
+                    .types(Collections.emptyList())
+                    .photoNames(Collections.emptyList())
+                    .weekdayDescriptions(Collections.emptyList())
+                    .build();
+        }
+
+        List<String> photoNames = getPhotoNames(detail.getPhotos());
+
+        return PlaceDetailResponse.builder()
+                .placeId(detail.getId())
+                .name(getLocalizedText(detail.getDisplayName()))
+                .address(detail.getFormattedAddress())
+                .latitude(getLatitude(detail.getLocation()))
+                .longitude(getLongitude(detail.getLocation()))
+                .primaryType(detail.getPrimaryType())
+                .primaryTypeName(getLocalizedText(detail.getPrimaryTypeDisplayName()))
+                .types(detail.getTypes() == null ? Collections.emptyList() : detail.getTypes())
+                .rating(detail.getRating())
+                .userRatingCount(detail.getUserRatingCount())
+                .photoNames(photoNames)
+                .photoName(photoNames.isEmpty() ? null : photoNames.getFirst())
+                .googleMapsUri(detail.getGoogleMapsUri())
+                .nationalPhoneNumber(detail.getNationalPhoneNumber())
+                .internationalPhoneNumber(detail.getInternationalPhoneNumber())
+                .websiteUri(detail.getWebsiteUri())
+                .weekdayDescriptions(getWeekdayDescriptions(detail.getRegularOpeningHours()))
+                .summary(getLocalizedText(detail.getEditorialSummary()))
+                .build();
+    }
+
+    private List<String> getPhotoNames(List<GooglePlacesTextSearchResponse.Photo> photos) {
+        if (photos == null) {
+            return Collections.emptyList();
+        }
+
+        return photos.stream()
+                .map(GooglePlacesTextSearchResponse.Photo::getName)
+                .filter(name -> name != null && !name.isBlank())
+                .toList();
+    }
+
+    private List<String> getWeekdayDescriptions(GooglePlaceDetailResponse.OpeningHours openingHours) {
+        if (openingHours == null || openingHours.getWeekdayDescriptions() == null) {
+            return Collections.emptyList();
+        }
+
+        return openingHours.getWeekdayDescriptions();
+    }
+
+    private Double getLatitude(GooglePlacesTextSearchResponse.LatLng location) {
+        return location == null ? null : location.getLatitude();
+    }
+
+    private Double getLongitude(GooglePlacesTextSearchResponse.LatLng location) {
+        return location == null ? null : location.getLongitude();
+    }
+
     private int resolveSize(Integer size) {
         if (size == null) {
             return DEFAULT_PAGE_SIZE;
         }
 
         return Math.max(1, Math.min(size, MAX_PAGE_SIZE));
+    }
+
+    private int resolvePhotoWidth(Integer maxWidthPx) {
+        if (maxWidthPx == null) {
+            return DEFAULT_PHOTO_WIDTH;
+        }
+
+        return Math.max(MIN_PHOTO_WIDTH, Math.min(maxWidthPx, MAX_PHOTO_WIDTH));
     }
 
     private String normalizeNullable(String value) {

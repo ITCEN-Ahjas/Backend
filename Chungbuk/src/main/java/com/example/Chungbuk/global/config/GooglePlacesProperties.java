@@ -14,4 +14,5 @@ public class GooglePlacesProperties {
     private String baseUrl;
     private String apiKey;
     private String fieldMask;
+    private String detailFieldMask;
 }
