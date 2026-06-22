@@ -82,6 +82,19 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(AiOutfitApiException.class)
+    public ResponseEntity<ErrorResponse> handleAiOutfitApiException(
+            AiOutfitApiException exception,
+            HttpServletRequest request
+    ) {
+        return createErrorResponse(
+                HttpStatus.BAD_GATEWAY,
+                "AI_OUTFIT_API_ERROR",
+                "AI 옷차림 추천 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.",
+                request
+        );
+    }
+
     private ResponseEntity<ErrorResponse> createErrorResponse(
             HttpStatus status,
             String code,
