@@ -41,6 +41,12 @@ public class FeelsLikeWeatherService {
                         temperatureDifference,
                         currentWeather.getPrecipitationType()
                 ),
+                createSummary(
+                        temperature,
+                        feelsLikeTemperature,
+                        temperatureDifference
+                ),
+                createDetail(factors),
                 factors
         );
     }
@@ -152,6 +158,76 @@ public class FeelsLikeWeatherService {
         }
 
         return "현재 기온과 비슷하게 느껴집니다.";
+    }
+
+    private String createSummary(
+            double temperature,
+            double feelsLikeTemperature,
+            double temperatureDifference
+    ) {
+        String temperatureText = formatTemperature(temperature);
+        String feelsLikeTemperatureText =
+                formatTemperature(feelsLikeTemperature);
+
+        if (temperatureDifference <= -1.0) {
+            return "현재 기온은 "
+                    + temperatureText
+                    + "°C지만 체감온도는 "
+                    + feelsLikeTemperatureText
+                    + "°C로, "
+                    + formatTemperature(Math.abs(temperatureDifference))
+                    + "°C 더 낮게 느껴질 수 있어요.";
+        }
+
+        if (temperatureDifference >= 1.0) {
+            return "현재 기온은 "
+                    + temperatureText
+                    + "°C지만 체감온도는 "
+                    + feelsLikeTemperatureText
+                    + "°C로, "
+                    + formatTemperature(Math.abs(temperatureDifference))
+                    + "°C 더 높게 느껴질 수 있어요.";
+        }
+
+        return "현재 기온은 "
+                + temperatureText
+                + "°C이고 체감온도도 "
+                + feelsLikeTemperatureText
+                + "°C로, 비슷하게 느껴집니다.";
+    }
+
+    private String createDetail(List<String> factors) {
+        if (factors.contains("바람 영향")
+                && factors.contains("강수 가능성")) {
+            return "바람과 강수 영향으로 야외에서는 실제 기온보다 "
+                    + "더 쌀쌀하게 느껴질 수 있습니다.";
+        }
+
+        if (factors.contains("바람 영향")) {
+            return "충북의 바람 때문에 외국인 여행자에게는 "
+                    + "야외에서 더 쌀쌀하게 느껴질 수 있습니다.";
+        }
+
+        if (factors.contains("높은 기온과 습도")) {
+            return "높은 기온과 습도 때문에 실제 기온보다 "
+                    + "더 덥고 답답하게 느껴질 수 있습니다.";
+        }
+
+        if (factors.contains("강수 가능성")) {
+            return "비나 눈이 내리면 체감온도가 달라질 수 있으니 "
+                    + "우산 또는 방수 준비를 권장합니다.";
+        }
+
+        return "현재 기온과 체감온도 차이가 크지 않아 "
+                + "비교적 편안하게 느껴질 수 있습니다.";
+    }
+
+    private String formatTemperature(double value) {
+        if (Math.abs(value - Math.rint(value)) < 0.001) {
+            return String.valueOf((long) value);
+        }
+
+        return String.valueOf(value);
     }
 
     private double round(double value) {
