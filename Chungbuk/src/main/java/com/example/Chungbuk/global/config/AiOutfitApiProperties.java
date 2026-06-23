@@ -6,7 +6,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class AiOutfitApiProperties {
 
     private String baseUrl = "http://localhost:8000";
+
     private String recommendPath = "/api/v1/outfits/recommend";
+
+    private String batchRecommendPath =
+            "/api/v1/outfits/recommendations";
 
     public String getBaseUrl() {
         return baseUrl;
@@ -24,11 +28,22 @@ public class AiOutfitApiProperties {
         this.recommendPath = recommendPath;
     }
 
-    public String getRecommendUrl() {
-        String normalizedBaseUrl = removeTrailingSlash(baseUrl);
-        String normalizedRecommendPath = addLeadingSlash(recommendPath);
+    public String getBatchRecommendPath() {
+        return batchRecommendPath;
+    }
 
-        return normalizedBaseUrl + normalizedRecommendPath;
+    public void setBatchRecommendPath(
+            String batchRecommendPath
+    ) {
+        this.batchRecommendPath = batchRecommendPath;
+    }
+
+    public String getRecommendUrl() {
+        return createUrl(recommendPath);
+    }
+
+    public String getBatchRecommendUrl() {
+        return createUrl(batchRecommendPath);
     }
 
     public void validateBaseUrl() {
@@ -38,6 +53,11 @@ public class AiOutfitApiProperties {
                             + "ai.outfit.base-url 값을 확인하세요."
             );
         }
+    }
+
+    private String createUrl(String path) {
+        return removeTrailingSlash(baseUrl)
+                + addLeadingSlash(path);
     }
 
     private String removeTrailingSlash(String value) {

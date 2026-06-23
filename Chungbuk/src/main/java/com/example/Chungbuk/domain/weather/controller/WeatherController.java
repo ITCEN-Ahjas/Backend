@@ -2,6 +2,7 @@ package com.example.Chungbuk.domain.weather.controller;
 
 import com.example.Chungbuk.domain.weather.dto.request.OutfitRecommendationRequest;
 import com.example.Chungbuk.domain.weather.dto.request.RegionWeatherRequest;
+import com.example.Chungbuk.domain.weather.dto.response.RegionBatchOutfitRecommendationResponse;
 import com.example.Chungbuk.domain.weather.dto.response.RegionOutfitRecommendationResponse;
 import com.example.Chungbuk.domain.weather.dto.response.WeatherPageResponse;
 import com.example.Chungbuk.domain.weather.dto.response.WeatherRegionsResponse;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class WeatherController {
 
     private final WeatherService weatherService;
+
     private final OutfitRecommendationService
             outfitRecommendationService;
 
@@ -59,5 +61,13 @@ public class WeatherController {
                 );
 
         return outfitRecommendationService.recommend(request);
+    }
+
+    @GetMapping("/outfit-recommendations")
+    public RegionBatchOutfitRecommendationResponse
+    getBatchOutfitRecommendations(
+            @RequestParam String region
+    ) {
+        return outfitRecommendationService.recommendBatch(region);
     }
 }

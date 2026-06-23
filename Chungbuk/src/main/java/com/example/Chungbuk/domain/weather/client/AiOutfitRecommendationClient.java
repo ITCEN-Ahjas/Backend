@@ -1,6 +1,8 @@
 package com.example.Chungbuk.domain.weather.client;
 
+import com.example.Chungbuk.domain.weather.dto.request.AiOutfitBatchRecommendationRequest;
 import com.example.Chungbuk.domain.weather.dto.request.AiOutfitRecommendationRequest;
+import com.example.Chungbuk.domain.weather.dto.response.AiOutfitBatchRecommendationResponse;
 import com.example.Chungbuk.domain.weather.dto.response.AiOutfitRecommendationResponse;
 import com.example.Chungbuk.global.config.AiOutfitApiProperties;
 import com.example.Chungbuk.global.exception.AiOutfitApiException;
@@ -20,6 +22,7 @@ import java.net.URI;
 public class AiOutfitRecommendationClient {
 
     private final RestTemplate aiOutfitRestTemplate;
+
     private final AiOutfitApiProperties aiOutfitApiProperties;
 
     public AiOutfitRecommendationClient(
@@ -34,25 +37,45 @@ public class AiOutfitRecommendationClient {
     public AiOutfitRecommendationResponse recommend(
             AiOutfitRecommendationRequest request
     ) {
+        return requestAiRecommendation(
+                aiOutfitApiProperties.getRecommendUrl(),
+                request,
+                AiOutfitRecommendationResponse.class
+        );
+    }
+
+    public AiOutfitBatchRecommendationResponse recommendBatch(
+            AiOutfitBatchRecommendationRequest request
+    ) {
+        return requestAiRecommendation(
+                aiOutfitApiProperties.getBatchRecommendUrl(),
+                request,
+                AiOutfitBatchRecommendationResponse.class
+        );
+    }
+
+    private <T> T requestAiRecommendation(
+            String requestUrl,
+            Object requestBody,
+            Class<T> responseType
+    ) {
         aiOutfitApiProperties.validateBaseUrl();
 
-        URI requestUri = URI.create(
-                aiOutfitApiProperties.getRecommendUrl()
-        );
+        URI requestUri = URI.create(requestUrl);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
 
-        HttpEntity<AiOutfitRecommendationRequest> requestEntity =
-                new HttpEntity<>(request, headers);
+        HttpEntity<Object> requestEntity =
+                new HttpEntity<>(requestBody, headers);
 
         try {
-            ResponseEntity<AiOutfitRecommendationResponse> responseEntity =
+            ResponseEntity<T> responseEntity =
                     aiOutfitRestTemplate.exchange(
                             requestUri,
                             HttpMethod.POST,
                             requestEntity,
-                            AiOutfitRecommendationResponse.class
+                            responseType
                     );
 
             return extractResponse(responseEntity);
@@ -64,8 +87,8 @@ public class AiOutfitRecommendationClient {
         }
     }
 
-    private AiOutfitRecommendationResponse extractResponse(
-            ResponseEntity<AiOutfitRecommendationResponse> responseEntity
+    private <T> T extractResponse(
+            ResponseEntity<T> responseEntity
     ) {
         if (responseEntity == null || responseEntity.getBody() == null) {
             throw new AiOutfitApiException(
