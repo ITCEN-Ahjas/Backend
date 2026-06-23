@@ -4,6 +4,9 @@ import com.example.Chungbuk.domain.accommodation.client.AccommodationApiClient;
 import com.example.Chungbuk.domain.accommodation.dto.response.AccommodationDetailResponse;
 import com.example.Chungbuk.domain.accommodation.dto.response.AccommodationListResponse;
 import com.example.Chungbuk.domain.accommodation.dto.response.AccommodationSummaryResponse;
+import com.example.Chungbuk.domain.accommodation.dto.response.RoomInfoResponse;
+import com.example.Chungbuk.domain.accommodation.entity.AccommodationEntity;
+import com.example.Chungbuk.domain.accommodation.entity.AccommodationRoomEntity;
 import com.example.Chungbuk.domain.accommodation.mapper.AccommodationMapper;
 import com.example.Chungbuk.domain.accommodation.repository.AccommodationRepository;
 import com.example.Chungbuk.domain.festival.constant.ChungbukRegion;
@@ -76,30 +79,24 @@ public class AccommodationService {
     public AccommodationDetailResponse getAccommodationDetail(String contentId) {
         String validContentId = safe(contentId);
 
-        return accommodationRepository.findById(validContentId)
-                .map(accommodationMapper::toAccommodationDetailResponse)
-                .orElseGet(() -> fetchAndPersistAccommodationDetail(validContentId));
-    }
+        AccommodationEntity entity = accommodationRepository.findById(validContentId).orElse(null);
 
-    private AccommodationDetailResponse fetchAndPersistAccommodationDetail(String contentId) {
-        String detailCommonRawJson = accommodationApiClient.getAccommodationDetailCommonRaw(contentId);
-        String detailIntroRawJson = accommodationApiClient.getAccommodationDetailIntroRaw(contentId);
-        String detailImageRawJson = accommodationApiClient.getAccommodationDetailImageRaw(contentId);
-        String roomInfoRawJson = accommodationApiClient.getAccommodationRoomInfoRaw(contentId);
-
-        AccommodationDetailResponse response = accommodationMapper.toAccommodationDetailResponse(
-                detailCommonRawJson,
-                detailIntroRawJson,
-                detailImageRawJson,
-                roomInfoRawJson,
-                contentId
-        );
-
-        if (hasText(response.getId()) && hasText(response.getTitle())) {
-            accommodationRepository.save(accommodationMapper.toEntity(response));
+        if (entity != null && entity.isDetailSynced()) {
+            return accommodationMapper.toAccommodationDetailResponse(entity);
         }
 
-        return response;
+        return fetchAndPersistAccommodationDetail(validContentId, entity);
+    }
+
+    @Transactional
+    public void syncAccommodationDetail(String contentId) {
+        AccommodationEntity entity = accommodationRepository.findById(contentId).orElse(null);
+
+        if (entity != null && entity.isDetailSynced()) {
+            return;
+        }
+
+        fetchAndPersistAccommodationDetail(contentId, entity);
     }
 
     public String getAccommodationRaw(int page, int size, String region) {
@@ -114,11 +111,89 @@ public class AccommodationService {
         );
     }
 
+    private AccommodationDetailResponse fetchAndPersistAccommodationDetail(
+            String contentId,
+            AccommodationEntity existingEntity
+    ) {
+        String detailCommonRawJson = accommodationApiClient.getAccommodationDetailCommonRaw(contentId);
+        String detailIntroRawJson = accommodationApiClient.getAccommodationDetailIntroRaw(contentId);
+        String detailImageRawJson = accommodationApiClient.getAccommodationDetailImageRaw(contentId);
+        String roomInfoRawJson = accommodationApiClient.getAccommodationRoomInfoRaw(contentId);
+
+        AccommodationDetailResponse response = accommodationMapper.toAccommodationDetailResponse(
+                detailCommonRawJson,
+                detailIntroRawJson,
+                detailImageRawJson,
+                roomInfoRawJson,
+                contentId
+        );
+
+        if (!hasText(response.getId()) || !hasText(response.getTitle())) {
+            return response;
+        }
+
+        if (existingEntity != null) {
+            existingEntity.updateDetailFields(
+                    response.getCat1(),
+                    response.getCat2(),
+                    response.getCat3(),
+                    response.getTitle(),
+                    response.getRegion(),
+                    response.getCategory(),
+                    response.getAddress(),
+                    response.getImageUrl(),
+                    response.getImageUrls(),
+                    response.getTel(),
+                    response.getHomepage(),
+                    response.getOverview(),
+                    response.getDescription(),
+                    response.getDescriptionSource(),
+                    response.getMapX(),
+                    response.getMapY(),
+                    response.getCheckInTime(),
+                    response.getCheckOutTime(),
+                    response.getParking(),
+                    response.getCookingAvailable(),
+                    response.getRoomCount(),
+                    response.getInfoCenter()
+            );
+            existingEntity.replaceRooms(buildRoomEntities(response.getRooms()));
+        } else {
+            AccommodationEntity newEntity = accommodationMapper.toEntity(response);
+            newEntity.markDetailSynced();
+            accommodationRepository.save(newEntity);
+        }
+
+        return response;
+    }
+
+    private List<AccommodationRoomEntity> buildRoomEntities(List<RoomInfoResponse> rooms) {
+        if (rooms == null) {
+            return List.of();
+        }
+        return rooms.stream()
+                .map(r -> AccommodationRoomEntity.builder()
+                        .roomTitle(r.getRoomTitle())
+                        .roomSize(r.getRoomSize())
+                        .roomCount(r.getRoomCount())
+                        .baseCount(r.getBaseCount())
+                        .maxCount(r.getMaxCount())
+                        .offSeasonMinFee(r.getOffSeasonMinFee())
+                        .offSeasonMaxFee(r.getOffSeasonMaxFee())
+                        .peakSeasonMinFee(r.getPeakSeasonMinFee())
+                        .peakSeasonMaxFee(r.getPeakSeasonMaxFee())
+                        .roomImageUrl(r.getRoomImageUrl())
+                        .bathFacility(r.getBathFacility())
+                        .internet(r.getInternet())
+                        .airCondition(r.getAirCondition())
+                        .build())
+                .toList();
+    }
+
     private boolean matchesCategory(String itemCategory, String requestedCategory) {
         if (!hasText(requestedCategory) || "전체".equals(requestedCategory.trim())) {
             return true;
         }
-
         return requestedCategory.trim().equals(itemCategory);
     }
 
@@ -126,36 +201,23 @@ public class AccommodationService {
         if (!hasText(keyword)) {
             return true;
         }
-
         String normalizedKeyword = normalizeForSearch(keyword);
-
         String searchTarget = normalizeForSearch(
                 item.getTitle() + " "
                         + item.getRegion() + " "
                         + item.getCategory() + " "
                         + item.getAddress()
         );
-
         return searchTarget.contains(normalizedKeyword);
     }
 
     private int normalizePage(int page) {
-        if (page < 1) {
-            return DEFAULT_PAGE;
-        }
-
-        return page;
+        return page < 1 ? DEFAULT_PAGE : page;
     }
 
     private int normalizeSize(int size) {
-        if (size < 1) {
-            return 10;
-        }
-
-        if (size > 100) {
-            return 100;
-        }
-
+        if (size < 1) return 10;
+        if (size > 100) return 100;
         return size;
     }
 
@@ -164,9 +226,7 @@ public class AccommodationService {
     }
 
     private String normalizeForSearch(String value) {
-        return safe(value)
-                .replace(" ", "")
-                .toLowerCase();
+        return safe(value).replace(" ", "").toLowerCase();
     }
 
     private boolean hasText(String value) {

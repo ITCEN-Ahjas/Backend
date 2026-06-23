@@ -75,6 +75,10 @@ public class AccommodationEntity {
     private String roomCount;
     private String infoCenter;
 
+    @Column(name = "detail_synced", nullable = false)
+    @Builder.Default
+    private boolean detailSynced = false;
+
     @OneToMany(mappedBy = "accommodation", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @Builder.Default
     private List<AccommodationRoomEntity> rooms = new ArrayList<>();
@@ -82,5 +86,68 @@ public class AccommodationEntity {
     public void addRoom(AccommodationRoomEntity room) {
         room.assignAccommodation(this);
         this.rooms.add(room);
+    }
+
+    public void markDetailSynced() {
+        this.detailSynced = true;
+    }
+
+    public void updateDetailFields(
+            String cat1,
+            String cat2,
+            String cat3,
+            String title,
+            String region,
+            String category,
+            String address,
+            String imageUrl,
+            List<String> imageUrls,
+            String tel,
+            String homepage,
+            String overview,
+            String description,
+            String descriptionSource,
+            String mapX,
+            String mapY,
+            String checkInTime,
+            String checkOutTime,
+            String parking,
+            String cookingAvailable,
+            String roomCount,
+            String infoCenter
+    ) {
+        this.cat1 = cat1;
+        this.cat2 = cat2;
+        this.cat3 = cat3;
+        this.title = title;
+        this.region = region;
+        this.category = category;
+        this.address = address;
+        this.imageUrl = imageUrl;
+        this.imageUrls = imageUrls != null ? new ArrayList<>(imageUrls) : new ArrayList<>();
+        this.tel = tel;
+        this.homepage = homepage;
+        this.overview = overview;
+        this.description = description;
+        this.descriptionSource = descriptionSource;
+        this.mapX = mapX;
+        this.mapY = mapY;
+        this.checkInTime = checkInTime;
+        this.checkOutTime = checkOutTime;
+        this.parking = parking;
+        this.cookingAvailable = cookingAvailable;
+        this.roomCount = roomCount;
+        this.infoCenter = infoCenter;
+        this.detailSynced = true;
+    }
+
+    public void replaceRooms(List<AccommodationRoomEntity> newRooms) {
+        this.rooms.clear();
+        if (newRooms != null) {
+            for (AccommodationRoomEntity room : newRooms) {
+                room.assignAccommodation(this);
+                this.rooms.add(room);
+            }
+        }
     }
 }
