@@ -11,6 +11,8 @@ public class RegionTimeSlotOutfitRecommendationResponse {
     private final LocalDate forecastDate;
     private final String source;
 
+    private final ResidenceCityWeatherResponse residenceWeather;
+
     private final List<TimeSlotOutfitRecommendationResponse>
             recommendations;
 
@@ -22,10 +24,30 @@ public class RegionTimeSlotOutfitRecommendationResponse {
             List<TimeSlotOutfitRecommendationResponse>
                     recommendations
     ) {
+        this(
+                region,
+                updatedAt,
+                forecastDate,
+                source,
+                null,
+                recommendations
+        );
+    }
+
+    public RegionTimeSlotOutfitRecommendationResponse(
+            String region,
+            LocalDateTime updatedAt,
+            LocalDate forecastDate,
+            String source,
+            ResidenceCityWeatherResponse residenceWeather,
+            List<TimeSlotOutfitRecommendationResponse>
+                    recommendations
+    ) {
         this.region = region;
         this.updatedAt = updatedAt;
         this.forecastDate = forecastDate;
         this.source = source;
+        this.residenceWeather = residenceWeather;
         this.recommendations = List.copyOf(recommendations);
     }
 
@@ -43,6 +65,10 @@ public class RegionTimeSlotOutfitRecommendationResponse {
 
     public String getSource() {
         return source;
+    }
+
+    public ResidenceCityWeatherResponse getResidenceWeather() {
+        return residenceWeather;
     }
 
     public List<TimeSlotOutfitRecommendationResponse>

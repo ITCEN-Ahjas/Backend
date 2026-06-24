@@ -13,11 +13,23 @@ import org.springframework.web.client.RestTemplate;
         value = "classpath:application-secret.properties",
         encoding = "UTF-8"
 )
-@EnableConfigurationProperties(WeatherApiProperties.class)
+@EnableConfigurationProperties({
+        WeatherApiProperties.class,
+        OpenMeteoApiProperties.class
+})
 public class WeatherApiConfig {
 
     @Bean(name = "kmaRestTemplate")
     public RestTemplate kmaRestTemplate() {
+        return createRestTemplate();
+    }
+
+    @Bean(name = "openMeteoRestTemplate")
+    public RestTemplate openMeteoRestTemplate() {
+        return createRestTemplate();
+    }
+
+    private RestTemplate createRestTemplate() {
         SimpleClientHttpRequestFactory requestFactory =
                 new SimpleClientHttpRequestFactory();
 

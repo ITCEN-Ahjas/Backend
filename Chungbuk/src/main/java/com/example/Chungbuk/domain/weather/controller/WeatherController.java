@@ -6,14 +6,19 @@ import com.example.Chungbuk.domain.weather.dto.response.RegionBatchOutfitRecomme
 import com.example.Chungbuk.domain.weather.dto.response.RegionOutfitRecommendationResponse;
 import com.example.Chungbuk.domain.weather.dto.response.RegionTimeSlotOutfitRecommendationResponse;
 import com.example.Chungbuk.domain.weather.dto.response.RegionTimeSlotWeatherResponse;
+import com.example.Chungbuk.domain.weather.dto.response.ResidenceCitySearchResponse;
 import com.example.Chungbuk.domain.weather.dto.response.WeatherPageResponse;
 import com.example.Chungbuk.domain.weather.dto.response.WeatherRegionsResponse;
 import com.example.Chungbuk.domain.weather.service.OutfitRecommendationService;
+import com.example.Chungbuk.domain.weather.service.ResidenceCityWeatherService;
 import com.example.Chungbuk.domain.weather.service.WeatherService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/weather")
@@ -24,13 +29,31 @@ public class WeatherController {
     private final OutfitRecommendationService
             outfitRecommendationService;
 
+    private final ResidenceCityWeatherService
+            residenceCityWeatherService;
+
+    @Autowired
     public WeatherController(
             WeatherService weatherService,
-            OutfitRecommendationService outfitRecommendationService
+            OutfitRecommendationService outfitRecommendationService,
+            ResidenceCityWeatherService residenceCityWeatherService
     ) {
         this.weatherService = weatherService;
         this.outfitRecommendationService =
                 outfitRecommendationService;
+        this.residenceCityWeatherService =
+                residenceCityWeatherService;
+    }
+
+    WeatherController(
+            WeatherService weatherService,
+            OutfitRecommendationService outfitRecommendationService
+    ) {
+        this(
+                weatherService,
+                outfitRecommendationService,
+                null
+        );
     }
 
     @GetMapping("/regions")
@@ -53,6 +76,17 @@ public class WeatherController {
     ) {
         return weatherService.getRegionTimeSlotWeather(
                 createRegionWeatherRequest(region)
+        );
+    }
+
+    @GetMapping("/residence-cities")
+    public List<ResidenceCitySearchResponse> searchResidenceCities(
+            @RequestParam String countryCode,
+            @RequestParam String query
+    ) {
+        return residenceCityWeatherService.searchCities(
+                countryCode,
+                query
         );
     }
 
@@ -82,9 +116,15 @@ public class WeatherController {
     @GetMapping("/outfit-recommendations/time-slots")
     public RegionTimeSlotOutfitRecommendationResponse
     getTimeSlotOutfitRecommendations(
-            @RequestParam String region
+            @RequestParam String region,
+            @RequestParam(required = false) String residenceCity,
+            @RequestParam(required = false) String residenceCountryCode
     ) {
-        return outfitRecommendationService.recommendTimeSlots(region);
+        return outfitRecommendationService.recommendTimeSlots(
+                region,
+                residenceCity,
+                residenceCountryCode
+        );
     }
 
     private RegionWeatherRequest createRegionWeatherRequest(

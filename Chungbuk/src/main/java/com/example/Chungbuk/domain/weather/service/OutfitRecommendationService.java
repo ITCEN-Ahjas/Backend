@@ -16,11 +16,15 @@ import com.example.Chungbuk.domain.weather.dto.response.RegionBatchOutfitRecomme
 import com.example.Chungbuk.domain.weather.dto.response.RegionOutfitRecommendationResponse;
 import com.example.Chungbuk.domain.weather.dto.response.RegionTimeSlotOutfitRecommendationResponse;
 import com.example.Chungbuk.domain.weather.dto.response.RegionTimeSlotWeatherResponse;
+import com.example.Chungbuk.domain.weather.dto.response.ResidenceCityWeatherResponse;
+import com.example.Chungbuk.domain.weather.dto.response.ResidenceWeatherComparisonResponse;
 import com.example.Chungbuk.domain.weather.dto.response.TimeSlotOutfitRecommendationResponse;
 import com.example.Chungbuk.domain.weather.dto.response.TimeSlotWeatherResponse;
 import com.example.Chungbuk.domain.weather.dto.response.WeatherPageResponse;
 import com.example.Chungbuk.global.exception.AiOutfitApiException;
 import com.example.Chungbuk.global.exception.InvalidRequestException;
+import com.example.Chungbuk.global.exception.ResidenceWeatherApiException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -36,13 +40,31 @@ public class OutfitRecommendationService {
     private final AiOutfitRecommendationClient
             aiOutfitRecommendationClient;
 
+    private final ResidenceCityWeatherService
+            residenceCityWeatherService;
+
+    @Autowired
     public OutfitRecommendationService(
             WeatherService weatherService,
-            AiOutfitRecommendationClient aiOutfitRecommendationClient
+            AiOutfitRecommendationClient aiOutfitRecommendationClient,
+            ResidenceCityWeatherService residenceCityWeatherService
     ) {
         this.weatherService = weatherService;
         this.aiOutfitRecommendationClient =
                 aiOutfitRecommendationClient;
+        this.residenceCityWeatherService =
+                residenceCityWeatherService;
+    }
+
+    OutfitRecommendationService(
+            WeatherService weatherService,
+            AiOutfitRecommendationClient aiOutfitRecommendationClient
+    ) {
+        this(
+                weatherService,
+                aiOutfitRecommendationClient,
+                null
+        );
     }
 
     public RegionOutfitRecommendationResponse recommend(
@@ -112,7 +134,20 @@ public class OutfitRecommendationService {
 
     public RegionTimeSlotOutfitRecommendationResponse
     recommendTimeSlots(String region) {
+        return recommendTimeSlots(region, null, null);
+    }
+
+    public RegionTimeSlotOutfitRecommendationResponse
+    recommendTimeSlots(
+            String region,
+            String residenceCity,
+            String residenceCountryCode
+    ) {
         validateRegion(region);
+        validateResidenceLocationPair(
+                residenceCity,
+                residenceCountryCode
+        );
 
         RegionTimeSlotWeatherResponse weatherResponse =
                 weatherService.getRegionTimeSlotWeather(
@@ -124,10 +159,17 @@ public class OutfitRecommendationService {
                         createAiTimeSlotRequest(weatherResponse)
                 );
 
+        ResidenceCityWeatherResponse residenceWeather =
+                getResidenceWeatherOrNull(
+                        residenceCity,
+                        residenceCountryCode
+                );
+
         List<TimeSlotOutfitRecommendationResponse> recommendations =
                 mergeTimeSlotRecommendations(
                         weatherResponse,
-                        aiResponse
+                        aiResponse,
+                        residenceWeather
                 );
 
         return new RegionTimeSlotOutfitRecommendationResponse(
@@ -135,8 +177,27 @@ public class OutfitRecommendationService {
                 weatherResponse.getUpdatedAt(),
                 weatherResponse.getForecastDate(),
                 aiResponse.getSource(),
+                residenceWeather,
                 recommendations
         );
+    }
+
+    private ResidenceCityWeatherResponse getResidenceWeatherOrNull(
+            String residenceCity,
+            String residenceCountryCode
+    ) {
+        if (!hasText(residenceCity)) {
+            return null;
+        }
+
+        try {
+            return residenceCityWeatherService.getCurrentWeather(
+                    residenceCountryCode,
+                    residenceCity
+            );
+        } catch (ResidenceWeatherApiException exception) {
+            return null;
+        }
     }
 
     private RegionWeatherRequest createRegionWeatherRequest(
@@ -270,7 +331,8 @@ public class OutfitRecommendationService {
     private List<TimeSlotOutfitRecommendationResponse>
     mergeTimeSlotRecommendations(
             RegionTimeSlotWeatherResponse weatherResponse,
-            AiTimeSlotOutfitBatchRecommendationResponse aiResponse
+            AiTimeSlotOutfitBatchRecommendationResponse aiResponse,
+            ResidenceCityWeatherResponse residenceWeather
     ) {
         Map<String, AiTimeSlotOutfitBatchRecommendationResponse
                 .TimeSlotOutfitRecommendation> recommendationsByTimeSlot =
@@ -299,6 +361,10 @@ public class OutfitRecommendationService {
                             weatherTimeSlot.getEndTime(),
                             weatherTimeSlot.getCurrentWeather(),
                             weatherTimeSlot.getFeelsLikeWeather(),
+                            createResidenceComparison(
+                                    residenceWeather,
+                                    weatherTimeSlot.getFeelsLikeWeather()
+                            ),
                             aiRecommendation.getOutfitCards(),
                             aiRecommendation.getPreparationItems()
                     )
@@ -306,6 +372,62 @@ public class OutfitRecommendationService {
         }
 
         return List.copyOf(recommendations);
+    }
+
+    private ResidenceWeatherComparisonResponse
+    createResidenceComparison(
+            ResidenceCityWeatherResponse residenceWeather,
+            FeelsLikeWeatherResponse targetFeelsLikeWeather
+    ) {
+        if (residenceWeather == null) {
+            return null;
+        }
+
+        double targetTemperature =
+                targetFeelsLikeWeather.getFeelsLikeTemperature();
+        double difference = targetTemperature
+                - residenceWeather.getFeelsLikeTemperature();
+        double roundedDifference = Math.round(difference * 10.0) / 10.0;
+        double absoluteDifference = Math.abs(roundedDifference);
+
+        String message = createComparisonMessage(
+                residenceWeather.getCity(),
+                roundedDifference,
+                absoluteDifference
+        );
+
+        return new ResidenceWeatherComparisonResponse(
+                residenceWeather.getCity(),
+                residenceWeather.getCountry(),
+                residenceWeather.getFeelsLikeTemperature(),
+                targetTemperature,
+                roundedDifference,
+                message
+        );
+    }
+
+    private String createComparisonMessage(
+            String residenceCity,
+            double difference,
+            double absoluteDifference
+    ) {
+        if (absoluteDifference < 1.0) {
+            return "현재 거주 도시 " + residenceCity
+                    + "와 체감온도가 비슷해요.";
+        }
+
+        int roundedGap = Math.max(
+                1,
+                (int) Math.round(absoluteDifference)
+        );
+
+        if (difference < 0) {
+            return "현재 거주 도시 " + residenceCity
+                    + "보다 약 " + roundedGap + "°C 더 선선해요.";
+        }
+
+        return "현재 거주 도시 " + residenceCity
+                + "보다 약 " + roundedGap + "°C 더 더워요.";
     }
 
     private Map<String, AiTimeSlotOutfitBatchRecommendationResponse
@@ -404,6 +526,24 @@ public class OutfitRecommendationService {
                     "지역을 선택해 주세요."
             );
         }
+    }
+
+    private void validateResidenceLocationPair(
+            String residenceCity,
+            String residenceCountryCode
+    ) {
+        boolean hasCity = hasText(residenceCity);
+        boolean hasCountryCode = hasText(residenceCountryCode);
+
+        if (hasCity != hasCountryCode) {
+            throw new InvalidRequestException(
+                    "현재 거주 도시와 국가 코드를 함께 입력해 주세요."
+            );
+        }
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private void validateAiResponse(

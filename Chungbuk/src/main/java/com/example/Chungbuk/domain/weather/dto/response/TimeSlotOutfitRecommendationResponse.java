@@ -15,6 +15,9 @@ public class TimeSlotOutfitRecommendationResponse {
     private final CurrentWeatherResponse currentWeather;
     private final FeelsLikeWeatherResponse feelsLikeWeather;
 
+    private final ResidenceWeatherComparisonResponse
+            residenceComparison;
+
     private final AiOutfitRecommendationResponse.OutfitCards outfitCards;
 
     private final List<AiOutfitRecommendationResponse.PreparationItem>
@@ -32,6 +35,33 @@ public class TimeSlotOutfitRecommendationResponse {
             List<AiOutfitRecommendationResponse.PreparationItem>
                     preparationItems
     ) {
+        this(
+                timeSlot,
+                timeSlotName,
+                forecastAt,
+                startTime,
+                endTime,
+                currentWeather,
+                feelsLikeWeather,
+                null,
+                outfitCards,
+                preparationItems
+        );
+    }
+
+    public TimeSlotOutfitRecommendationResponse(
+            String timeSlot,
+            String timeSlotName,
+            LocalDateTime forecastAt,
+            LocalTime startTime,
+            LocalTime endTime,
+            CurrentWeatherResponse currentWeather,
+            FeelsLikeWeatherResponse feelsLikeWeather,
+            ResidenceWeatherComparisonResponse residenceComparison,
+            AiOutfitRecommendationResponse.OutfitCards outfitCards,
+            List<AiOutfitRecommendationResponse.PreparationItem>
+                    preparationItems
+    ) {
         this.timeSlot = timeSlot;
         this.timeSlotName = timeSlotName;
         this.forecastAt = forecastAt;
@@ -39,6 +69,7 @@ public class TimeSlotOutfitRecommendationResponse {
         this.endTime = endTime;
         this.currentWeather = currentWeather;
         this.feelsLikeWeather = feelsLikeWeather;
+        this.residenceComparison = residenceComparison;
         this.outfitCards = outfitCards;
         this.preparationItems = List.copyOf(preparationItems);
     }
@@ -69,6 +100,11 @@ public class TimeSlotOutfitRecommendationResponse {
 
     public FeelsLikeWeatherResponse getFeelsLikeWeather() {
         return feelsLikeWeather;
+    }
+
+    public ResidenceWeatherComparisonResponse
+    getResidenceComparison() {
+        return residenceComparison;
     }
 
     public AiOutfitRecommendationResponse.OutfitCards getOutfitCards() {

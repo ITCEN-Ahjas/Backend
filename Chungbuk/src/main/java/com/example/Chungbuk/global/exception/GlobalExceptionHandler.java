@@ -95,6 +95,19 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(ResidenceWeatherApiException.class)
+    public ResponseEntity<ErrorResponse> handleResidenceWeatherApiException(
+            ResidenceWeatherApiException exception,
+            HttpServletRequest request
+    ) {
+        return createErrorResponse(
+                HttpStatus.BAD_GATEWAY,
+                "RESIDENCE_WEATHER_API_ERROR",
+                "현재 거주 도시 날씨를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.",
+                request
+        );
+    }
+
     private ResponseEntity<ErrorResponse> createErrorResponse(
             HttpStatus status,
             String code,
