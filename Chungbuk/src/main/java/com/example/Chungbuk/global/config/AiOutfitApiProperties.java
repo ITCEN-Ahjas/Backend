@@ -12,6 +12,9 @@ public class AiOutfitApiProperties {
     private String batchRecommendPath =
             "/api/v1/outfits/recommendations";
 
+    private String timeSlotRecommendPath =
+            "/api/v1/outfits/time-slot-recommendations";
+
     public String getBaseUrl() {
         return baseUrl;
     }
@@ -38,12 +41,26 @@ public class AiOutfitApiProperties {
         this.batchRecommendPath = batchRecommendPath;
     }
 
+    public String getTimeSlotRecommendPath() {
+        return timeSlotRecommendPath;
+    }
+
+    public void setTimeSlotRecommendPath(
+            String timeSlotRecommendPath
+    ) {
+        this.timeSlotRecommendPath = timeSlotRecommendPath;
+    }
+
     public String getRecommendUrl() {
         return createUrl(recommendPath);
     }
 
     public String getBatchRecommendUrl() {
         return createUrl(batchRecommendPath);
+    }
+
+    public String getTimeSlotRecommendUrl() {
+        return createUrl(timeSlotRecommendPath);
     }
 
     public void validateBaseUrl() {

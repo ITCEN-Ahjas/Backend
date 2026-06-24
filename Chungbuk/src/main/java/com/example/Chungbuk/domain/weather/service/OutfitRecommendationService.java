@@ -4,20 +4,28 @@ import com.example.Chungbuk.domain.weather.client.AiOutfitRecommendationClient;
 import com.example.Chungbuk.domain.weather.constant.TravelStyle;
 import com.example.Chungbuk.domain.weather.dto.request.AiOutfitBatchRecommendationRequest;
 import com.example.Chungbuk.domain.weather.dto.request.AiOutfitRecommendationRequest;
+import com.example.Chungbuk.domain.weather.dto.request.AiTimeSlotOutfitRecommendationRequest;
 import com.example.Chungbuk.domain.weather.dto.request.OutfitRecommendationRequest;
 import com.example.Chungbuk.domain.weather.dto.request.RegionWeatherRequest;
 import com.example.Chungbuk.domain.weather.dto.response.AiOutfitBatchRecommendationResponse;
 import com.example.Chungbuk.domain.weather.dto.response.AiOutfitRecommendationResponse;
+import com.example.Chungbuk.domain.weather.dto.response.AiTimeSlotOutfitBatchRecommendationResponse;
 import com.example.Chungbuk.domain.weather.dto.response.CurrentWeatherResponse;
 import com.example.Chungbuk.domain.weather.dto.response.FeelsLikeWeatherResponse;
 import com.example.Chungbuk.domain.weather.dto.response.RegionBatchOutfitRecommendationResponse;
 import com.example.Chungbuk.domain.weather.dto.response.RegionOutfitRecommendationResponse;
+import com.example.Chungbuk.domain.weather.dto.response.RegionTimeSlotOutfitRecommendationResponse;
+import com.example.Chungbuk.domain.weather.dto.response.RegionTimeSlotWeatherResponse;
+import com.example.Chungbuk.domain.weather.dto.response.TimeSlotOutfitRecommendationResponse;
+import com.example.Chungbuk.domain.weather.dto.response.TimeSlotWeatherResponse;
 import com.example.Chungbuk.domain.weather.dto.response.WeatherPageResponse;
 import com.example.Chungbuk.global.exception.AiOutfitApiException;
 import com.example.Chungbuk.global.exception.InvalidRequestException;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -102,6 +110,35 @@ public class OutfitRecommendationService {
         );
     }
 
+    public RegionTimeSlotOutfitRecommendationResponse
+    recommendTimeSlots(String region) {
+        validateRegion(region);
+
+        RegionTimeSlotWeatherResponse weatherResponse =
+                weatherService.getRegionTimeSlotWeather(
+                        createRegionWeatherRequest(region)
+                );
+
+        AiTimeSlotOutfitBatchRecommendationResponse aiResponse =
+                aiOutfitRecommendationClient.recommendTimeSlots(
+                        createAiTimeSlotRequest(weatherResponse)
+                );
+
+        List<TimeSlotOutfitRecommendationResponse> recommendations =
+                mergeTimeSlotRecommendations(
+                        weatherResponse,
+                        aiResponse
+                );
+
+        return new RegionTimeSlotOutfitRecommendationResponse(
+                weatherResponse.getRegion(),
+                weatherResponse.getUpdatedAt(),
+                weatherResponse.getForecastDate(),
+                aiResponse.getSource(),
+                recommendations
+        );
+    }
+
     private RegionWeatherRequest createRegionWeatherRequest(
             String region
     ) {
@@ -135,13 +172,58 @@ public class OutfitRecommendationService {
         );
     }
 
+    private AiTimeSlotOutfitRecommendationRequest
+    createAiTimeSlotRequest(
+            RegionTimeSlotWeatherResponse weatherResponse
+    ) {
+        List<AiTimeSlotOutfitRecommendationRequest.TimeSlotWeather>
+                timeSlots = weatherResponse.getTimeSlots().stream()
+                .map(this::createAiTimeSlotWeather)
+                .toList();
+
+        return new AiTimeSlotOutfitRecommendationRequest(
+                weatherResponse.getRegion(),
+                timeSlots
+        );
+    }
+
+    private AiTimeSlotOutfitRecommendationRequest.TimeSlotWeather
+    createAiTimeSlotWeather(
+            TimeSlotWeatherResponse timeSlotWeather
+    ) {
+        return new AiTimeSlotOutfitRecommendationRequest.TimeSlotWeather(
+                timeSlotWeather.getTimeSlot(),
+                timeSlotWeather.getTimeSlotName(),
+                timeSlotWeather.getForecastAt(),
+                timeSlotWeather.getStartTime(),
+                timeSlotWeather.getEndTime(),
+                createAiCurrentWeather(timeSlotWeather),
+                createAiFeelsLikeWeather(timeSlotWeather)
+        );
+    }
+
     private AiOutfitRecommendationRequest.CurrentWeather
     createAiCurrentWeather(
             WeatherPageResponse weatherPageResponse
     ) {
-        CurrentWeatherResponse currentWeather =
-                weatherPageResponse.getCurrentWeather();
+        return createAiCurrentWeather(
+                weatherPageResponse.getCurrentWeather()
+        );
+    }
 
+    private AiOutfitRecommendationRequest.CurrentWeather
+    createAiCurrentWeather(
+            TimeSlotWeatherResponse timeSlotWeather
+    ) {
+        return createAiCurrentWeather(
+                timeSlotWeather.getCurrentWeather()
+        );
+    }
+
+    private AiOutfitRecommendationRequest.CurrentWeather
+    createAiCurrentWeather(
+            CurrentWeatherResponse currentWeather
+    ) {
         return new AiOutfitRecommendationRequest.CurrentWeather(
                 currentWeather.getTemperature(),
                 currentWeather.getHumidity(),
@@ -159,15 +241,161 @@ public class OutfitRecommendationService {
     createAiFeelsLikeWeather(
             WeatherPageResponse weatherPageResponse
     ) {
-        FeelsLikeWeatherResponse feelsLikeWeather =
-                weatherPageResponse.getFeelsLikeWeather();
+        return createAiFeelsLikeWeather(
+                weatherPageResponse.getFeelsLikeWeather()
+        );
+    }
 
+    private AiOutfitRecommendationRequest.FeelsLikeWeather
+    createAiFeelsLikeWeather(
+            TimeSlotWeatherResponse timeSlotWeather
+    ) {
+        return createAiFeelsLikeWeather(
+                timeSlotWeather.getFeelsLikeWeather()
+        );
+    }
+
+    private AiOutfitRecommendationRequest.FeelsLikeWeather
+    createAiFeelsLikeWeather(
+            FeelsLikeWeatherResponse feelsLikeWeather
+    ) {
         return new AiOutfitRecommendationRequest.FeelsLikeWeather(
                 feelsLikeWeather.getFeelsLikeTemperature(),
                 feelsLikeWeather.getTemperatureDifference(),
                 feelsLikeWeather.getDescription(),
                 feelsLikeWeather.getFactors()
         );
+    }
+
+    private List<TimeSlotOutfitRecommendationResponse>
+    mergeTimeSlotRecommendations(
+            RegionTimeSlotWeatherResponse weatherResponse,
+            AiTimeSlotOutfitBatchRecommendationResponse aiResponse
+    ) {
+        Map<String, AiTimeSlotOutfitBatchRecommendationResponse
+                .TimeSlotOutfitRecommendation> recommendationsByTimeSlot =
+                validateAndIndexTimeSlotAiResponse(
+                        weatherResponse,
+                        aiResponse
+                );
+
+        List<TimeSlotOutfitRecommendationResponse> recommendations =
+                new ArrayList<>();
+
+        for (TimeSlotWeatherResponse weatherTimeSlot
+                : weatherResponse.getTimeSlots()) {
+            AiTimeSlotOutfitBatchRecommendationResponse
+                    .TimeSlotOutfitRecommendation aiRecommendation =
+                    recommendationsByTimeSlot.get(
+                            weatherTimeSlot.getTimeSlot()
+                    );
+
+            recommendations.add(
+                    new TimeSlotOutfitRecommendationResponse(
+                            weatherTimeSlot.getTimeSlot(),
+                            weatherTimeSlot.getTimeSlotName(),
+                            weatherTimeSlot.getForecastAt(),
+                            weatherTimeSlot.getStartTime(),
+                            weatherTimeSlot.getEndTime(),
+                            weatherTimeSlot.getCurrentWeather(),
+                            weatherTimeSlot.getFeelsLikeWeather(),
+                            aiRecommendation.getOutfitCards(),
+                            aiRecommendation.getPreparationItems()
+                    )
+            );
+        }
+
+        return List.copyOf(recommendations);
+    }
+
+    private Map<String, AiTimeSlotOutfitBatchRecommendationResponse
+            .TimeSlotOutfitRecommendation>
+    validateAndIndexTimeSlotAiResponse(
+            RegionTimeSlotWeatherResponse weatherResponse,
+            AiTimeSlotOutfitBatchRecommendationResponse aiResponse
+    ) {
+        if (aiResponse == null
+                || !isAllowedTimeSlotSource(aiResponse.getSource())
+                || aiResponse.getRecommendations() == null
+                || aiResponse.getRecommendations().isEmpty()) {
+
+            throw new AiOutfitApiException(
+                    "AI 시간대별 옷차림 추천 응답 형식이 올바르지 않습니다."
+            );
+        }
+
+        Map<String, AiTimeSlotOutfitBatchRecommendationResponse
+                .TimeSlotOutfitRecommendation> recommendations =
+                new LinkedHashMap<>();
+
+        for (AiTimeSlotOutfitBatchRecommendationResponse
+                .TimeSlotOutfitRecommendation recommendation
+                : aiResponse.getRecommendations()) {
+
+            validateTimeSlotAiRecommendation(recommendation);
+
+            AiTimeSlotOutfitBatchRecommendationResponse
+                    .TimeSlotOutfitRecommendation previous =
+                    recommendations.put(
+                            recommendation.getTimeSlot(),
+                            recommendation
+                    );
+
+            if (previous != null) {
+                throw new AiOutfitApiException(
+                        "AI 시간대별 추천 결과에 중복된 시간대가 있습니다."
+                );
+            }
+        }
+
+        if (recommendations.size() != weatherResponse
+                .getTimeSlots()
+                .size()) {
+
+            throw new AiOutfitApiException(
+                    "AI 시간대별 추천 결과 개수가 날씨 시간대와 다릅니다."
+            );
+        }
+
+        for (TimeSlotWeatherResponse weatherTimeSlot
+                : weatherResponse.getTimeSlots()) {
+            if (!recommendations.containsKey(
+                    weatherTimeSlot.getTimeSlot()
+            )) {
+                throw new AiOutfitApiException(
+                        "AI 시간대별 추천 결과에 "
+                                + weatherTimeSlot.getTimeSlotName()
+                                + " 항목이 없습니다."
+                );
+            }
+        }
+
+        return recommendations;
+    }
+
+    private boolean isAllowedTimeSlotSource(String source) {
+        return "ai".equals(source) || "fallback".equals(source);
+    }
+
+    private void validateTimeSlotAiRecommendation(
+            AiTimeSlotOutfitBatchRecommendationResponse
+                    .TimeSlotOutfitRecommendation recommendation
+    ) {
+        if (recommendation == null
+                || recommendation.getTimeSlot() == null
+                || recommendation.getTimeSlot().isBlank()
+                || recommendation.getOutfitCards() == null
+                || recommendation.getOutfitCards().getOuterwear() == null
+                || recommendation.getOutfitCards().getTop() == null
+                || recommendation.getOutfitCards().getBottom() == null
+                || recommendation.getOutfitCards().getShoes() == null
+                || recommendation.getPreparationItems() == null
+                || recommendation.getPreparationItems().isEmpty()) {
+
+            throw new AiOutfitApiException(
+                    "AI 시간대별 옷차림 추천 항목이 올바르지 않습니다."
+            );
+        }
     }
 
     private void validateRegion(String region) {
