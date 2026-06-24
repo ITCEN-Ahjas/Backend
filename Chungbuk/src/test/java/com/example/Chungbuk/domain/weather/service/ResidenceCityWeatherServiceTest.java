@@ -19,6 +19,37 @@ import static org.mockito.Mockito.when;
 class ResidenceCityWeatherServiceTest {
 
     @Test
+    void searchCities_preservesCompactQueryForGenericClientResolution() {
+        ResidenceCityWeatherClient client =
+                mock(ResidenceCityWeatherClient.class);
+
+        ResidenceCitySearchResponse newYork =
+                new ResidenceCitySearchResponse(
+                        "New York",
+                        "United States",
+                        "US",
+                        "New York",
+                        40.71427,
+                        -74.00597
+                );
+
+        when(client.searchCities("US", "newyork"))
+                .thenReturn(List.of(newYork));
+
+        ResidenceCityWeatherService service =
+                new ResidenceCityWeatherService(client);
+
+        List<ResidenceCitySearchResponse> cities = service.searchCities(
+                "us",
+                "newyork"
+        );
+
+        assertEquals(1, cities.size());
+        assertEquals("New York", cities.get(0).getCity());
+        verify(client).searchCities("US", "newyork");
+    }
+
+    @Test
     void getCurrentWeather_reusesCachedResponseForSameCity() {
         ResidenceCityWeatherClient client =
                 mock(ResidenceCityWeatherClient.class);

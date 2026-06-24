@@ -104,19 +104,35 @@ public class ResidenceCityWeatherService {
     }
 
     private String normalizeCityQuery(String city) {
-        if (city == null || city.trim().length() < MIN_CITY_QUERY_LENGTH) {
+        if (city == null) {
             throw new InvalidRequestException(
                     "현재 거주 도시는 두 글자 이상 입력해 주세요."
             );
         }
 
-        return city.trim();
+        String normalizedSpacing = city.trim()
+                .replaceAll("[^\\p{L}\\p{N}]+", " ");
+        String cityKey = createCityKey(normalizedSpacing);
+
+        if (cityKey.length() < MIN_CITY_QUERY_LENGTH) {
+            throw new InvalidRequestException(
+                    "현재 거주 도시는 두 글자 이상 입력해 주세요."
+            );
+        }
+
+        return normalizedSpacing;
     }
 
     private String createCacheKey(
             String countryCode,
             String city
     ) {
-        return countryCode + ":" + city.toLowerCase(Locale.ROOT);
+        return countryCode + ":" + createCityKey(city);
+    }
+
+    private String createCityKey(String city) {
+        return city
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[^\\p{L}\\p{N}]+", "");
     }
 }

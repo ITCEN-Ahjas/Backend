@@ -9,6 +9,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestTemplate;
 
 import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -30,7 +32,7 @@ class ResidenceCityWeatherClientTest {
                 any(URI.class),
                 eq(ResidenceCityWeatherClient
                         .OpenMeteoGeocodingResponse.class)
-        )).thenReturn(ResponseEntity.ok(createGeocodingResponse()));
+        )).thenReturn(ResponseEntity.ok(createTokyoGeocodingResponse()));
 
         ResidenceCityWeatherClient client =
                 new ResidenceCityWeatherClient(
@@ -55,6 +57,108 @@ class ResidenceCityWeatherClientTest {
 
         assertTrue(requestUrl.contains("name=Tokyo"));
         assertTrue(requestUrl.contains("countryCode=JP"));
+        assertEquals(1, cities.size());
+        assertEquals("Tokyo", cities.get(0).getCity());
+        assertEquals("JP", cities.get(0).getCountryCode());
+    }
+
+    @Test
+    void searchCities_findsNewYorkFromCompactInputWithoutAliasMap() {
+        RestTemplate restTemplate = mock(RestTemplate.class);
+
+        when(restTemplate.getForEntity(
+                any(URI.class),
+                eq(ResidenceCityWeatherClient
+                        .OpenMeteoGeocodingResponse.class)
+        )).thenAnswer(invocation -> {
+            URI requestUri = invocation.getArgument(0);
+            String requestUrl = URLDecoder.decode(
+                    requestUri.toString(),
+                    StandardCharsets.UTF_8
+            );
+
+            if (requestUrl.contains("name=new york")) {
+                return ResponseEntity.ok(createNewYorkGeocodingResponse());
+            }
+
+            return ResponseEntity.ok(createGeocodingResponse(List.of()));
+        });
+
+        ResidenceCityWeatherClient client =
+                new ResidenceCityWeatherClient(
+                        restTemplate,
+                        createProperties()
+                );
+
+        List<ResidenceCitySearchResponse> cities = client.searchCities(
+                "US",
+                "newyork"
+        );
+
+        assertEquals(1, cities.size());
+        assertEquals("New York", cities.get(0).getCity());
+        assertEquals("US", cities.get(0).getCountryCode());
+    }
+
+    @Test
+    void searchCities_findsSanFranciscoFromCompactInputWithoutCitySpecificRule() {
+        RestTemplate restTemplate = mock(RestTemplate.class);
+
+        when(restTemplate.getForEntity(
+                any(URI.class),
+                eq(ResidenceCityWeatherClient
+                        .OpenMeteoGeocodingResponse.class)
+        )).thenAnswer(invocation -> {
+            URI requestUri = invocation.getArgument(0);
+            String requestUrl = URLDecoder.decode(
+                    requestUri.toString(),
+                    StandardCharsets.UTF_8
+            );
+
+            if (requestUrl.contains("name=san francisco")) {
+                return ResponseEntity.ok(createSanFranciscoGeocodingResponse());
+            }
+
+            return ResponseEntity.ok(createGeocodingResponse(List.of()));
+        });
+
+        ResidenceCityWeatherClient client =
+                new ResidenceCityWeatherClient(
+                        restTemplate,
+                        createProperties()
+                );
+
+        List<ResidenceCitySearchResponse> cities = client.searchCities(
+                "US",
+                "SanFrancisco"
+        );
+
+        assertEquals(1, cities.size());
+        assertEquals("San Francisco", cities.get(0).getCity());
+        assertEquals("US", cities.get(0).getCountryCode());
+    }
+
+    @Test
+    void searchCities_keepsExactCityAndRemovesOtherCountryOrFacilityResults() {
+        RestTemplate restTemplate = mock(RestTemplate.class);
+
+        when(restTemplate.getForEntity(
+                any(URI.class),
+                eq(ResidenceCityWeatherClient
+                        .OpenMeteoGeocodingResponse.class)
+        )).thenReturn(ResponseEntity.ok(createMixedTokyoGeocodingResponse()));
+
+        ResidenceCityWeatherClient client =
+                new ResidenceCityWeatherClient(
+                        restTemplate,
+                        createProperties()
+                );
+
+        List<ResidenceCitySearchResponse> cities = client.searchCities(
+                "JP",
+                "Tokyo"
+        );
+
         assertEquals(1, cities.size());
         assertEquals("Tokyo", cities.get(0).getCity());
         assertEquals("JP", cities.get(0).getCountryCode());
@@ -118,22 +222,107 @@ class ResidenceCityWeatherClientTest {
     }
 
     private ResidenceCityWeatherClient.OpenMeteoGeocodingResponse
-    createGeocodingResponse() {
-        ResidenceCityWeatherClient.OpenMeteoGeocodingResult result =
-                new ResidenceCityWeatherClient.OpenMeteoGeocodingResult();
+    createTokyoGeocodingResponse() {
+        return createGeocodingResponse(List.of(
+                createGeocodingResult(
+                        "Tokyo",
+                        "Japan",
+                        "JP",
+                        "Tokyo",
+                        35.6895,
+                        139.6917
+                )
+        ));
+    }
 
-        result.setName("Tokyo");
-        result.setCountry("Japan");
-        result.setCountryCode("JP");
-        result.setAdmin1("Tokyo");
-        result.setLatitude(35.6895);
-        result.setLongitude(139.6917);
+    private ResidenceCityWeatherClient.OpenMeteoGeocodingResponse
+    createNewYorkGeocodingResponse() {
+        return createGeocodingResponse(List.of(
+                createGeocodingResult(
+                        "New York",
+                        "United States",
+                        "US",
+                        "New York",
+                        40.71427,
+                        -74.00597
+                )
+        ));
+    }
 
+    private ResidenceCityWeatherClient.OpenMeteoGeocodingResponse
+    createSanFranciscoGeocodingResponse() {
+        return createGeocodingResponse(List.of(
+                createGeocodingResult(
+                        "San Francisco",
+                        "United States",
+                        "US",
+                        "California",
+                        37.77493,
+                        -122.41942
+                )
+        ));
+    }
+
+    private ResidenceCityWeatherClient.OpenMeteoGeocodingResponse
+    createMixedTokyoGeocodingResponse() {
+        return createGeocodingResponse(List.of(
+                createGeocodingResult(
+                        "Tokyo Heliport",
+                        "Japan",
+                        "JP",
+                        "Chiba",
+                        35.63333,
+                        139.85
+                ),
+                createGeocodingResult(
+                        "Tokyo",
+                        "Japan",
+                        "JP",
+                        "Tokyo",
+                        35.6895,
+                        139.6917
+                ),
+                createGeocodingResult(
+                        "Tokyo",
+                        "China",
+                        "CN",
+                        "Beijing",
+                        39.9042,
+                        116.4074
+                )
+        ));
+    }
+
+    private ResidenceCityWeatherClient.OpenMeteoGeocodingResponse
+    createGeocodingResponse(
+            List<ResidenceCityWeatherClient.OpenMeteoGeocodingResult> results
+    ) {
         ResidenceCityWeatherClient.OpenMeteoGeocodingResponse response =
                 new ResidenceCityWeatherClient.OpenMeteoGeocodingResponse();
 
-        response.setResults(List.of(result));
+        response.setResults(results);
         return response;
+    }
+
+    private ResidenceCityWeatherClient.OpenMeteoGeocodingResult
+    createGeocodingResult(
+            String name,
+            String country,
+            String countryCode,
+            String admin1,
+            double latitude,
+            double longitude
+    ) {
+        ResidenceCityWeatherClient.OpenMeteoGeocodingResult result =
+                new ResidenceCityWeatherClient.OpenMeteoGeocodingResult();
+
+        result.setName(name);
+        result.setCountry(country);
+        result.setCountryCode(countryCode);
+        result.setAdmin1(admin1);
+        result.setLatitude(latitude);
+        result.setLongitude(longitude);
+        return result;
     }
 
     private ResidenceCityWeatherClient.OpenMeteoForecastResponse

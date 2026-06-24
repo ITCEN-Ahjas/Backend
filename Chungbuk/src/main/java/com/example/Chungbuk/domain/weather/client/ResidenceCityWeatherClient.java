@@ -17,13 +17,24 @@ import java.net.URI;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Component
 public class ResidenceCityWeatherClient {
 
     private static final String CURRENT_WEATHER_FIELDS =
             "temperature_2m,apparent_temperature,weather_code";
+
+    private static final int CITY_SEARCH_COUNT = 10;
+    private static final int MIN_CITY_WORD_LENGTH = 2;
+    private static final int MAX_FALLBACK_SEARCH_VARIANTS = 36;
 
     private final RestTemplate openMeteoRestTemplate;
     private final OpenMeteoApiProperties openMeteoApiProperties;
@@ -43,10 +54,48 @@ public class ResidenceCityWeatherClient {
     ) {
         openMeteoApiProperties.validateUrls();
 
+        List<OpenMeteoGeocodingResult> directResults = requestGeocodingResults(
+                countryCode,
+                query
+        );
+        List<ResidenceCitySearchResponse> exactDirectCities =
+                findExactCityMatches(directResults, countryCode, query);
+
+        if (!exactDirectCities.isEmpty()) {
+            return exactDirectCities;
+        }
+
+        for (String fallbackQuery : createFallbackSearchQueries(query)) {
+            try {
+                List<ResidenceCitySearchResponse> exactFallbackCities =
+                        findExactCityMatches(
+                                requestGeocodingResults(
+                                        countryCode,
+                                        fallbackQuery
+                                ),
+                                countryCode,
+                                query
+                        );
+
+                if (!exactFallbackCities.isEmpty()) {
+                    return exactFallbackCities;
+                }
+            } catch (ResidenceWeatherApiException ignored) {
+                // 보조 검색 실패는 최초 검색 결과를 유지하고 다음 후보를 시도한다.
+            }
+        }
+
+        return refineCitySearchResults(directResults, countryCode, query);
+    }
+
+    private List<OpenMeteoGeocodingResult> requestGeocodingResults(
+            String countryCode,
+            String query
+    ) {
         URI requestUri = UriComponentsBuilder
                 .fromUriString(openMeteoApiProperties.getGeocodingSearchUrl())
                 .queryParam("name", query)
-                .queryParam("count", 10)
+                .queryParam("count", CITY_SEARCH_COUNT)
                 .queryParam("language", "en")
                 .queryParam("format", "json")
                 .queryParam("countryCode", countryCode)
@@ -66,9 +115,7 @@ public class ResidenceCityWeatherClient {
                 return Collections.emptyList();
             }
 
-            return body.getResults().stream()
-                    .map(this::toResidenceCity)
-                    .toList();
+            return body.getResults();
         } catch (RestClientException exception) {
             throw new ResidenceWeatherApiException(
                     "현재 거주 도시를 검색하지 못했습니다.",
@@ -122,6 +169,158 @@ public class ResidenceCityWeatherClient {
                     exception
             );
         }
+    }
+
+    private List<ResidenceCitySearchResponse> refineCitySearchResults(
+            List<OpenMeteoGeocodingResult> results,
+            String countryCode,
+            String query
+    ) {
+        List<ResidenceCitySearchResponse> countryCities = results.stream()
+                .filter(result -> isSameCountry(result, countryCode))
+                .map(this::toResidenceCity)
+                .toList();
+
+        List<ResidenceCitySearchResponse> exactCities = filterExactCityMatches(
+                countryCities,
+                query
+        );
+
+        return deduplicateCities(
+                exactCities.isEmpty() ? countryCities : exactCities
+        );
+    }
+
+    private List<ResidenceCitySearchResponse> findExactCityMatches(
+            List<OpenMeteoGeocodingResult> results,
+            String countryCode,
+            String query
+    ) {
+        List<ResidenceCitySearchResponse> countryCities = results.stream()
+                .filter(result -> isSameCountry(result, countryCode))
+                .map(this::toResidenceCity)
+                .toList();
+
+        return deduplicateCities(filterExactCityMatches(countryCities, query));
+    }
+
+    private List<ResidenceCitySearchResponse> filterExactCityMatches(
+            List<ResidenceCitySearchResponse> cities,
+            String query
+    ) {
+        String normalizedQuery = normalizeCityKey(query);
+
+        return cities.stream()
+                .filter(city -> normalizeCityKey(city.getCity())
+                        .equals(normalizedQuery))
+                .toList();
+    }
+
+    private List<ResidenceCitySearchResponse> deduplicateCities(
+            List<ResidenceCitySearchResponse> cities
+    ) {
+        return cities.stream()
+                .collect(Collectors.toMap(
+                        this::createCityDeduplicationKey,
+                        Function.identity(),
+                        (first, ignored) -> first,
+                        LinkedHashMap::new
+                ))
+                .values()
+                .stream()
+                .toList();
+    }
+
+    private List<String> createFallbackSearchQueries(String query) {
+        String compactQuery = normalizeCityKey(query);
+
+        if (compactQuery.length() < MIN_CITY_WORD_LENGTH * 2 + 1) {
+            return Collections.emptyList();
+        }
+
+        Set<String> candidates = new LinkedHashSet<>();
+        addSingleSpaceCandidates(compactQuery, candidates);
+        addTwoSpaceCandidates(compactQuery, candidates);
+
+        String originalQuery = query == null ? "" : query.trim();
+
+        return candidates.stream()
+                .filter(candidate -> !candidate.equalsIgnoreCase(originalQuery))
+                .limit(MAX_FALLBACK_SEARCH_VARIANTS)
+                .toList();
+    }
+
+    private void addSingleSpaceCandidates(
+            String compactQuery,
+            Set<String> candidates
+    ) {
+        int lastBoundary = compactQuery.length() - MIN_CITY_WORD_LENGTH;
+
+        for (int firstBoundary = MIN_CITY_WORD_LENGTH;
+             firstBoundary <= lastBoundary;
+             firstBoundary++) {
+            candidates.add(
+                    compactQuery.substring(0, firstBoundary)
+                            + " "
+                            + compactQuery.substring(firstBoundary)
+            );
+        }
+    }
+
+    private void addTwoSpaceCandidates(
+            String compactQuery,
+            Set<String> candidates
+    ) {
+        int firstBoundaryLimit = compactQuery.length()
+                - MIN_CITY_WORD_LENGTH * 2;
+
+        for (int firstBoundary = MIN_CITY_WORD_LENGTH;
+             firstBoundary <= firstBoundaryLimit;
+             firstBoundary++) {
+            int secondBoundaryLimit = compactQuery.length()
+                    - MIN_CITY_WORD_LENGTH;
+
+            for (int secondBoundary = firstBoundary + MIN_CITY_WORD_LENGTH;
+                 secondBoundary <= secondBoundaryLimit;
+                 secondBoundary++) {
+                candidates.add(
+                        compactQuery.substring(0, firstBoundary)
+                                + " "
+                                + compactQuery.substring(
+                                        firstBoundary,
+                                        secondBoundary
+                                )
+                                + " "
+                                + compactQuery.substring(secondBoundary)
+                );
+            }
+        }
+    }
+
+    private boolean isSameCountry(
+            OpenMeteoGeocodingResult result,
+            String countryCode
+    ) {
+        return result.getCountryCode() != null
+                && result.getCountryCode().equalsIgnoreCase(countryCode);
+    }
+
+    private String createCityDeduplicationKey(
+            ResidenceCitySearchResponse city
+    ) {
+        return normalizeCityKey(city.getCity())
+                + ":"
+                + city.getCountryCode().toUpperCase(Locale.ROOT);
+    }
+
+    private String normalizeCityKey(String value) {
+        if (value == null) {
+            return "";
+        }
+
+        return value
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[^\\p{L}\\p{N}]+", "");
     }
 
     private ResidenceCitySearchResponse toResidenceCity(
@@ -327,9 +526,7 @@ public class ResidenceCityWeatherClient {
             return apparentTemperature;
         }
 
-        public void setApparentTemperature(
-                Double apparentTemperature
-        ) {
+        public void setApparentTemperature(Double apparentTemperature) {
             this.apparentTemperature = apparentTemperature;
         }
 
