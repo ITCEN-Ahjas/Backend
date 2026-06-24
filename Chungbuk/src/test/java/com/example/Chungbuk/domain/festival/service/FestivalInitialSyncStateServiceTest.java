@@ -114,8 +114,6 @@ class FestivalInitialSyncStateServiceTest {
         when(festivalInitialSyncStateRepository.findById(1L))
                 .thenReturn(Optional.of(state));
 
-        stubProgress(854L, 854L, 700L, 0L, 0L);
-
         when(festivalInitialSyncStateRepository.save(any()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
