@@ -37,7 +37,9 @@ public class KmaWeatherClient {
         this.weatherApiProperties = weatherApiProperties;
     }
 
-    public List<KmaWeatherItem> getUltraSrtNcst(ChungbukRegion region) {
+    public List<KmaWeatherItem> getUltraSrtNcst(
+            ChungbukRegion region
+    ) {
         KmaBaseDateTime baseDateTime =
                 KmaDateTimeUtil.getUltraSrtNcstBaseDateTime();
 
@@ -48,12 +50,27 @@ public class KmaWeatherClient {
         );
     }
 
-    public List<KmaWeatherItem> getUltraSrtFcst(ChungbukRegion region) {
+    public List<KmaWeatherItem> getUltraSrtFcst(
+            ChungbukRegion region
+    ) {
         KmaBaseDateTime baseDateTime =
                 KmaDateTimeUtil.getUltraSrtFcstBaseDateTime();
 
         return requestWeatherItems(
                 "getUltraSrtFcst",
+                region,
+                baseDateTime
+        );
+    }
+
+    public List<KmaWeatherItem> getVilageFcst(
+            ChungbukRegion region
+    ) {
+        KmaBaseDateTime baseDateTime =
+                KmaDateTimeUtil.getVilageFcstBaseDateTime();
+
+        return requestWeatherItems(
+                "getVilageFcst",
                 region,
                 baseDateTime
         );

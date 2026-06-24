@@ -53,4 +53,34 @@ class KmaDateTimeUtilTest {
         assertEquals("20260620", result.baseDate());
         assertEquals("2230", result.baseTime());
     }
+
+    @Test
+    @DisplayName("단기예보는 발표 후 10분이 지난 가장 최근 발표 시각을 사용한다")
+    void getVilageFcstBaseDateTime_returnsLatestAvailableBaseTime() {
+        LocalDateTime currentDateTime =
+                LocalDateTime.of(2026, 6, 21, 10, 10);
+
+        KmaBaseDateTime result =
+                KmaDateTimeUtil.getVilageFcstBaseDateTime(
+                        currentDateTime
+                );
+
+        assertEquals("20260621", result.baseDate());
+        assertEquals("0800", result.baseTime());
+    }
+
+    @Test
+    @DisplayName("단기예보 발표 직전에는 이전 발표 시각을 사용한다")
+    void getVilageFcstBaseDateTime_usesPreviousBaseTimeBeforeRelease() {
+        LocalDateTime currentDateTime =
+                LocalDateTime.of(2026, 6, 21, 2, 5);
+
+        KmaBaseDateTime result =
+                KmaDateTimeUtil.getVilageFcstBaseDateTime(
+                        currentDateTime
+                );
+
+        assertEquals("20260620", result.baseDate());
+        assertEquals("2300", result.baseTime());
+    }
 }

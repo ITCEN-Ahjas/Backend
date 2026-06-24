@@ -4,6 +4,7 @@ import com.example.Chungbuk.domain.weather.dto.request.OutfitRecommendationReque
 import com.example.Chungbuk.domain.weather.dto.request.RegionWeatherRequest;
 import com.example.Chungbuk.domain.weather.dto.response.RegionBatchOutfitRecommendationResponse;
 import com.example.Chungbuk.domain.weather.dto.response.RegionOutfitRecommendationResponse;
+import com.example.Chungbuk.domain.weather.dto.response.RegionTimeSlotWeatherResponse;
 import com.example.Chungbuk.domain.weather.dto.response.WeatherPageResponse;
 import com.example.Chungbuk.domain.weather.dto.response.WeatherRegionsResponse;
 import com.example.Chungbuk.domain.weather.service.OutfitRecommendationService;
@@ -40,12 +41,18 @@ public class WeatherController {
     public WeatherPageResponse getRegionWeather(
             @RequestParam String region
     ) {
-        RegionWeatherRequest request =
-                new RegionWeatherRequest();
+        return weatherService.getRegionWeather(
+                createRegionWeatherRequest(region)
+        );
+    }
 
-        request.setRegion(region);
-
-        return weatherService.getRegionWeather(request);
+    @GetMapping("/region/time-slots")
+    public RegionTimeSlotWeatherResponse getRegionTimeSlotWeather(
+            @RequestParam String region
+    ) {
+        return weatherService.getRegionTimeSlotWeather(
+                createRegionWeatherRequest(region)
+        );
     }
 
     @GetMapping("/outfit-recommendation")
@@ -69,5 +76,14 @@ public class WeatherController {
             @RequestParam String region
     ) {
         return outfitRecommendationService.recommendBatch(region);
+    }
+
+    private RegionWeatherRequest createRegionWeatherRequest(
+            String region
+    ) {
+        RegionWeatherRequest request = new RegionWeatherRequest();
+        request.setRegion(region);
+
+        return request;
     }
 }
