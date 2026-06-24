@@ -2,8 +2,10 @@ package com.example.Chungbuk.domain.weather.client;
 
 import com.example.Chungbuk.domain.weather.dto.request.AiOutfitBatchRecommendationRequest;
 import com.example.Chungbuk.domain.weather.dto.request.AiOutfitRecommendationRequest;
+import com.example.Chungbuk.domain.weather.dto.request.AiTimeSlotOutfitRecommendationRequest;
 import com.example.Chungbuk.domain.weather.dto.response.AiOutfitBatchRecommendationResponse;
 import com.example.Chungbuk.domain.weather.dto.response.AiOutfitRecommendationResponse;
+import com.example.Chungbuk.domain.weather.dto.response.AiTimeSlotOutfitBatchRecommendationResponse;
 import com.example.Chungbuk.global.config.AiOutfitApiProperties;
 import com.example.Chungbuk.global.exception.AiOutfitApiException;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -51,6 +53,17 @@ public class AiOutfitRecommendationClient {
                 aiOutfitApiProperties.getBatchRecommendUrl(),
                 request,
                 AiOutfitBatchRecommendationResponse.class
+        );
+    }
+
+    public AiTimeSlotOutfitBatchRecommendationResponse
+    recommendTimeSlots(
+            AiTimeSlotOutfitRecommendationRequest request
+    ) {
+        return requestAiRecommendation(
+                aiOutfitApiProperties.getTimeSlotRecommendUrl(),
+                request,
+                AiTimeSlotOutfitBatchRecommendationResponse.class
         );
     }
 

@@ -1,12 +1,22 @@
 package com.example.Chungbuk.domain.weather.service;
 
 import com.example.Chungbuk.domain.weather.constant.ChungbukRegion;
+import com.example.Chungbuk.domain.weather.constant.WeatherTimeSlot;
 import com.example.Chungbuk.domain.weather.dto.response.CurrentWeatherResponse;
+import com.example.Chungbuk.domain.weather.dto.response.ForecastWeatherSnapshot;
 import com.example.Chungbuk.domain.weather.dto.response.KmaWeatherItem;
 import com.example.Chungbuk.global.exception.KmaWeatherApiException;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,13 +26,17 @@ import java.util.stream.Collectors;
 @Service
 public class WeatherDataNormalizeService {
 
+    private static final DateTimeFormatter FORECAST_DATE_TIME_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyyMMddHHmm");
+
     public CurrentWeatherResponse normalize(
             ChungbukRegion region,
             List<KmaWeatherItem> nowcastItems,
             List<KmaWeatherItem> forecastItems
     ) {
         Map<String, String> nowcastValues = toNowcastValues(nowcastItems);
-        Map<String, String> forecastValues = toNearestForecastValues(forecastItems);
+        Map<String, String> forecastValues =
+                toNearestForecastValues(forecastItems);
 
         double temperature = getRequiredDouble(
                 nowcastValues,
@@ -31,13 +45,12 @@ public class WeatherDataNormalizeService {
         );
 
         int humidity = getOptionalInteger(nowcastValues, "REH", 0);
-
         double windSpeed = getOptionalDouble(nowcastValues, "WSD", 0.0);
 
         String precipitationAmount = getValueOrDefault(
                 nowcastValues,
                 "RN1",
-                "강수없음"
+                "강수 없음"
         );
 
         String precipitationCode = getFirstNonBlank(
@@ -53,8 +66,285 @@ public class WeatherDataNormalizeService {
                 0
         );
 
-        String precipitationType = toPrecipitationType(precipitationCode);
+        return createCurrentWeatherResponse(
+                region,
+                temperature,
+                humidity,
+                windSpeed,
+                precipitationAmount,
+                precipitationCode,
+                skyCode,
+                precipitationProbability
+        );
+    }
+
+    public Map<WeatherTimeSlot, ForecastWeatherSnapshot>
+    normalizeTimeSlotForecasts(
+            ChungbukRegion region,
+            List<KmaWeatherItem> forecastItems,
+            LocalDateTime referenceDateTime
+    ) {
+        List<ForecastWeatherSnapshot> snapshots =
+                createForecastSnapshots(region, forecastItems);
+
+        List<WeatherTimeSlot> remainingTimeSlots =
+                getRemainingTimeSlots(referenceDateTime.toLocalTime());
+
+        LocalDate targetForecastDate;
+        List<WeatherTimeSlot> targetTimeSlots;
+
+        if (!remainingTimeSlots.isEmpty()
+                && hasTimeSlotForecasts(
+                        referenceDateTime.toLocalDate(),
+                        snapshots,
+                        remainingTimeSlots
+                )) {
+            targetForecastDate = referenceDateTime.toLocalDate();
+            targetTimeSlots = remainingTimeSlots;
+        } else {
+            targetForecastDate = findNextCompleteForecastDate(
+                    region,
+                    snapshots,
+                    referenceDateTime.toLocalDate().plusDays(1)
+            );
+            targetTimeSlots = List.of(WeatherTimeSlot.values());
+        }
+
+        Map<WeatherTimeSlot, ForecastWeatherSnapshot> result =
+                new EnumMap<>(WeatherTimeSlot.class);
+
+        for (WeatherTimeSlot timeSlot : targetTimeSlots) {
+            result.put(
+                    timeSlot,
+                    selectTimeSlotSnapshot(
+                            region,
+                            timeSlot,
+                            snapshots,
+                            targetForecastDate
+                    )
+            );
+        }
+
+        return Collections.unmodifiableMap(result);
+    }
+
+    private List<WeatherTimeSlot> getRemainingTimeSlots(
+            LocalTime referenceTime
+    ) {
+        return List.of(WeatherTimeSlot.values()).stream()
+                .filter(timeSlot -> referenceTime.isBefore(
+                        timeSlot.getEndTime()
+                ))
+                .toList();
+    }
+
+    private LocalDate findNextCompleteForecastDate(
+            ChungbukRegion region,
+            List<ForecastWeatherSnapshot> snapshots,
+            LocalDate minimumForecastDate
+    ) {
+        return snapshots.stream()
+                .map(snapshot -> snapshot.getForecastAt().toLocalDate())
+                .filter(date -> !date.isBefore(minimumForecastDate))
+                .distinct()
+                .sorted()
+                .filter(date -> hasTimeSlotForecasts(
+                        date,
+                        snapshots,
+                        List.of(WeatherTimeSlot.values())
+                ))
+                .findFirst()
+                .orElseThrow(() -> new KmaWeatherApiException(
+                        region.getDisplayName()
+                                + " 지역의 다음 날 시간대별 예보 데이터가 없습니다."
+                ));
+    }
+
+    private boolean hasTimeSlotForecasts(
+            LocalDate forecastDate,
+            List<ForecastWeatherSnapshot> snapshots,
+            List<WeatherTimeSlot> timeSlots
+    ) {
+        return timeSlots.stream().allMatch(timeSlot -> snapshots.stream()
+                .anyMatch(snapshot -> snapshot.getForecastAt()
+                        .toLocalDate()
+                        .equals(forecastDate)
+                        && timeSlot.contains(
+                                snapshot.getForecastAt().toLocalTime()
+                        )));
+    }
+
+    private List<ForecastWeatherSnapshot> createForecastSnapshots(
+            ChungbukRegion region,
+            List<KmaWeatherItem> forecastItems
+    ) {
+        if (forecastItems == null || forecastItems.isEmpty()) {
+            throw new KmaWeatherApiException(
+                    "기상청 단기예보 데이터가 없습니다."
+            );
+        }
+
+        Map<String, List<KmaWeatherItem>> groupedForecastItems =
+                forecastItems.stream()
+                        .filter(item -> hasText(item.getFcstDate()))
+                        .filter(item -> hasText(item.getFcstTime()))
+                        .filter(item -> hasText(item.getCategory()))
+                        .filter(item -> hasText(item.getFcstValue()))
+                        .collect(Collectors.groupingBy(
+                                item -> item.getFcstDate()
+                                        + item.getFcstTime(),
+                                TreeMap::new,
+                                Collectors.toList()
+                        ));
+
+        List<ForecastWeatherSnapshot> snapshots = new ArrayList<>();
+
+        for (Map.Entry<String, List<KmaWeatherItem>> entry
+                : groupedForecastItems.entrySet()) {
+            Map<String, String> forecastValues =
+                    toForecastValues(entry.getValue());
+
+            if (!hasText(forecastValues.get("TMP"))) {
+                continue;
+            }
+
+            snapshots.add(
+                    new ForecastWeatherSnapshot(
+                            parseForecastDateTime(entry.getKey()),
+                            normalizeForecastValues(region, forecastValues)
+                    )
+            );
+        }
+
+        if (snapshots.isEmpty()) {
+            throw new KmaWeatherApiException(
+                    region.getDisplayName()
+                            + " 지역의 시간대별 예보 데이터가 없습니다."
+            );
+        }
+
+        return List.copyOf(snapshots);
+    }
+
+    private ForecastWeatherSnapshot selectTimeSlotSnapshot(
+            ChungbukRegion region,
+            WeatherTimeSlot timeSlot,
+            List<ForecastWeatherSnapshot> snapshots,
+            LocalDate targetForecastDate
+    ) {
+        List<ForecastWeatherSnapshot> candidates = snapshots.stream()
+                .filter(snapshot -> snapshot.getForecastAt()
+                        .toLocalDate()
+                        .equals(targetForecastDate))
+                .filter(snapshot -> timeSlot.contains(
+                        snapshot.getForecastAt().toLocalTime()
+                ))
+                .toList();
+
+        if (candidates.isEmpty()) {
+            throw new KmaWeatherApiException(
+                    region.getDisplayName()
+                            + " 지역의 "
+                            + timeSlot.getDisplayName()
+                            + " 시간대 예보 데이터가 없습니다."
+            );
+        }
+
+        LocalDateTime representativeDateTime = LocalDateTime.of(
+                targetForecastDate,
+                timeSlot.getRepresentativeTime()
+        );
+
+        return candidates.stream()
+                .min((first, second) -> Long.compare(
+                        getDistanceMinutes(
+                                first.getForecastAt(),
+                                representativeDateTime
+                        ),
+                        getDistanceMinutes(
+                                second.getForecastAt(),
+                                representativeDateTime
+                        )
+                ))
+                .orElseThrow(() -> new KmaWeatherApiException(
+                        region.getDisplayName()
+                                + " 지역의 "
+                                + timeSlot.getDisplayName()
+                                + " 시간대 예보 데이터를 선택할 수 없습니다."
+                ));
+    }
+
+    private long getDistanceMinutes(
+            LocalDateTime first,
+            LocalDateTime second
+    ) {
+        return Math.abs(Duration.between(first, second).toMinutes());
+    }
+
+    private CurrentWeatherResponse normalizeForecastValues(
+            ChungbukRegion region,
+            Map<String, String> forecastValues
+    ) {
+        double temperature = getRequiredDouble(
+                forecastValues,
+                "TMP",
+                region
+        );
+
+        int humidity = getOptionalInteger(
+                forecastValues,
+                "REH",
+                0
+        );
+
+        double windSpeed = getOptionalDouble(
+                forecastValues,
+                "WSD",
+                0.0
+        );
+
+        String precipitationAmount = getValueOrDefault(
+                forecastValues,
+                "PCP",
+                "강수 없음"
+        );
+
+        String precipitationCode = forecastValues.get("PTY");
+        String skyCode = forecastValues.get("SKY");
+
+        int precipitationProbability = getOptionalInteger(
+                forecastValues,
+                "POP",
+                0
+        );
+
+        return createCurrentWeatherResponse(
+                region,
+                temperature,
+                humidity,
+                windSpeed,
+                precipitationAmount,
+                precipitationCode,
+                skyCode,
+                precipitationProbability
+        );
+    }
+
+    private CurrentWeatherResponse createCurrentWeatherResponse(
+            ChungbukRegion region,
+            double temperature,
+            int humidity,
+            double windSpeed,
+            String precipitationAmount,
+            String precipitationCode,
+            String skyCode,
+            int precipitationProbability
+    ) {
+        String precipitationType =
+                toPrecipitationType(precipitationCode);
+
         String skyStatus = toSkyStatus(skyCode);
+
         String weatherCondition = hasPrecipitation(precipitationType)
                 ? precipitationType
                 : skyStatus;
@@ -107,7 +397,8 @@ public class WeatherDataNormalizeService {
                         .filter(item -> hasText(item.getCategory()))
                         .filter(item -> hasText(item.getFcstValue()))
                         .collect(Collectors.groupingBy(
-                                item -> item.getFcstDate() + item.getFcstTime(),
+                                item -> item.getFcstDate()
+                                        + item.getFcstTime(),
                                 TreeMap::new,
                                 Collectors.toList()
                         ));
@@ -129,6 +420,22 @@ public class WeatherDataNormalizeService {
                         (previousValue, currentValue) -> currentValue,
                         LinkedHashMap::new
                 ));
+    }
+
+    private LocalDateTime parseForecastDateTime(
+            String forecastDateTimeText
+    ) {
+        try {
+            return LocalDateTime.parse(
+                    forecastDateTimeText,
+                    FORECAST_DATE_TIME_FORMATTER
+            );
+        } catch (DateTimeParseException exception) {
+            throw new KmaWeatherApiException(
+                    "기상청 예보 시각 형식이 올바르지 않습니다.",
+                    exception
+            );
+        }
     }
 
     private double getRequiredDouble(
