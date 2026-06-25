@@ -7,6 +7,7 @@ import java.util.List;
 public class AiTimeSlotOutfitRecommendationRequest {
 
     private String region;
+    private ResidenceWeather residenceWeather;
     private List<TimeSlotWeather> timeSlots;
 
     public AiTimeSlotOutfitRecommendationRequest() {
@@ -16,7 +17,16 @@ public class AiTimeSlotOutfitRecommendationRequest {
             String region,
             List<TimeSlotWeather> timeSlots
     ) {
+        this(region, null, timeSlots);
+    }
+
+    public AiTimeSlotOutfitRecommendationRequest(
+            String region,
+            ResidenceWeather residenceWeather,
+            List<TimeSlotWeather> timeSlots
+    ) {
         this.region = region;
+        this.residenceWeather = residenceWeather;
         this.timeSlots = List.copyOf(timeSlots);
     }
 
@@ -28,12 +38,66 @@ public class AiTimeSlotOutfitRecommendationRequest {
         this.region = region;
     }
 
+    public ResidenceWeather getResidenceWeather() {
+        return residenceWeather;
+    }
+
+    public void setResidenceWeather(ResidenceWeather residenceWeather) {
+        this.residenceWeather = residenceWeather;
+    }
+
     public List<TimeSlotWeather> getTimeSlots() {
         return timeSlots;
     }
 
     public void setTimeSlots(List<TimeSlotWeather> timeSlots) {
         this.timeSlots = timeSlots;
+    }
+
+    public static class ResidenceWeather {
+
+        private String city;
+        private String country;
+        private double feelsLikeTemperature;
+
+        public ResidenceWeather() {
+        }
+
+        public ResidenceWeather(
+                String city,
+                String country,
+                double feelsLikeTemperature
+        ) {
+            this.city = city;
+            this.country = country;
+            this.feelsLikeTemperature = feelsLikeTemperature;
+        }
+
+        public String getCity() {
+            return city;
+        }
+
+        public void setCity(String city) {
+            this.city = city;
+        }
+
+        public String getCountry() {
+            return country;
+        }
+
+        public void setCountry(String country) {
+            this.country = country;
+        }
+
+        public double getFeelsLikeTemperature() {
+            return feelsLikeTemperature;
+        }
+
+        public void setFeelsLikeTemperature(
+                double feelsLikeTemperature
+        ) {
+            this.feelsLikeTemperature = feelsLikeTemperature;
+        }
     }
 
     public static class TimeSlotWeather {

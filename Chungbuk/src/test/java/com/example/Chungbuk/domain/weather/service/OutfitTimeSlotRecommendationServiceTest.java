@@ -10,6 +10,7 @@ import com.example.Chungbuk.domain.weather.dto.response.CurrentWeatherResponse;
 import com.example.Chungbuk.domain.weather.dto.response.FeelsLikeWeatherResponse;
 import com.example.Chungbuk.domain.weather.dto.response.RegionTimeSlotOutfitRecommendationResponse;
 import com.example.Chungbuk.domain.weather.dto.response.RegionTimeSlotWeatherResponse;
+import com.example.Chungbuk.domain.weather.dto.response.ResidenceCityWeatherResponse;
 import com.example.Chungbuk.domain.weather.dto.response.TimeSlotWeatherResponse;
 import com.example.Chungbuk.global.exception.AiOutfitApiException;
 import org.junit.jupiter.api.Test;
@@ -91,6 +92,52 @@ class OutfitTimeSlotRecommendationServiceTest {
                         .getOuterwear()
                         .getName()
         );
+    }
+
+    @Test
+    void recommendTimeSlots_includesResidenceWeatherInAiRequest() {
+        WeatherService weatherService = mock(WeatherService.class);
+        AiOutfitRecommendationClient aiClient =
+                mock(AiOutfitRecommendationClient.class);
+        ResidenceCityWeatherService residenceCityWeatherService =
+                mock(ResidenceCityWeatherService.class);
+
+        OutfitRecommendationService service =
+                new OutfitRecommendationService(
+                        weatherService,
+                        aiClient,
+                        residenceCityWeatherService
+                );
+
+        when(weatherService.getRegionTimeSlotWeather(
+                any(RegionWeatherRequest.class)
+        )).thenReturn(createWeatherResponse());
+
+        when(residenceCityWeatherService.getCurrentWeather(
+                "US",
+                "New York"
+        )).thenReturn(createResidenceWeatherResponse());
+
+        when(aiClient.recommendTimeSlots(
+                any(AiTimeSlotOutfitRecommendationRequest.class)
+        )).thenReturn(createAiResponse());
+
+        service.recommendTimeSlots("청주", "New York", "US");
+
+        ArgumentCaptor<AiTimeSlotOutfitRecommendationRequest>
+                requestCaptor = ArgumentCaptor.forClass(
+                        AiTimeSlotOutfitRecommendationRequest.class
+                );
+
+        verify(aiClient).recommendTimeSlots(requestCaptor.capture());
+
+        AiTimeSlotOutfitRecommendationRequest.ResidenceWeather
+                residenceWeather = requestCaptor.getValue()
+                .getResidenceWeather();
+
+        assertEquals("New York", residenceWeather.getCity());
+        assertEquals("United States", residenceWeather.getCountry());
+        assertEquals(26.4, residenceWeather.getFeelsLikeTemperature());
     }
 
     @Test
@@ -193,6 +240,22 @@ class OutfitTimeSlotRecommendationServiceTest {
                 "현재 기온과 비슷해요.",
                 "기온과 체감온도 차이가 크지 않습니다.",
                 List.of("현재 기온")
+        );
+    }
+
+    private ResidenceCityWeatherResponse
+    createResidenceWeatherResponse() {
+        return new ResidenceCityWeatherResponse(
+                "New York",
+                "United States",
+                "US",
+                "New York",
+                40.7128,
+                -74.0060,
+                LocalDateTime.of(2026, 6, 24, 14, 0),
+                24.2,
+                26.4,
+                "흐림"
         );
     }
 
