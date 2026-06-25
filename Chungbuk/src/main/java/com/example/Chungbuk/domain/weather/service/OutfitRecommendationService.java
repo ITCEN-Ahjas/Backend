@@ -154,15 +154,18 @@ public class OutfitRecommendationService {
                         createRegionWeatherRequest(region)
                 );
 
-        AiTimeSlotOutfitBatchRecommendationResponse aiResponse =
-                aiOutfitRecommendationClient.recommendTimeSlots(
-                        createAiTimeSlotRequest(weatherResponse)
-                );
-
         ResidenceCityWeatherResponse residenceWeather =
                 getResidenceWeatherOrNull(
                         residenceCity,
                         residenceCountryCode
+                );
+
+        AiTimeSlotOutfitBatchRecommendationResponse aiResponse =
+                aiOutfitRecommendationClient.recommendTimeSlots(
+                        createAiTimeSlotRequest(
+                                weatherResponse,
+                                residenceWeather
+                        )
                 );
 
         List<TimeSlotOutfitRecommendationResponse> recommendations =
@@ -235,7 +238,8 @@ public class OutfitRecommendationService {
 
     private AiTimeSlotOutfitRecommendationRequest
     createAiTimeSlotRequest(
-            RegionTimeSlotWeatherResponse weatherResponse
+            RegionTimeSlotWeatherResponse weatherResponse,
+            ResidenceCityWeatherResponse residenceWeather
     ) {
         List<AiTimeSlotOutfitRecommendationRequest.TimeSlotWeather>
                 timeSlots = weatherResponse.getTimeSlots().stream()
@@ -244,8 +248,25 @@ public class OutfitRecommendationService {
 
         return new AiTimeSlotOutfitRecommendationRequest(
                 weatherResponse.getRegion(),
+                createAiResidenceWeather(residenceWeather),
                 timeSlots
         );
+    }
+
+    private AiTimeSlotOutfitRecommendationRequest.ResidenceWeather
+    createAiResidenceWeather(
+            ResidenceCityWeatherResponse residenceWeather
+    ) {
+        if (residenceWeather == null) {
+            return null;
+        }
+
+        return new AiTimeSlotOutfitRecommendationRequest
+                .ResidenceWeather(
+                        residenceWeather.getCity(),
+                        residenceWeather.getCountry(),
+                        residenceWeather.getFeelsLikeTemperature()
+                );
     }
 
     private AiTimeSlotOutfitRecommendationRequest.TimeSlotWeather
