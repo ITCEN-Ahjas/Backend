@@ -22,7 +22,11 @@ public class ResidenceCityIndex {
 
     private final List<IndexedCity> cities;
 
-    public ResidenceCityIndex(ObjectMapper objectMapper) {
+    public ResidenceCityIndex() {
+        this(new ObjectMapper());
+    }
+
+    ResidenceCityIndex(ObjectMapper objectMapper) {
         this.cities = loadCities(objectMapper);
     }
 
