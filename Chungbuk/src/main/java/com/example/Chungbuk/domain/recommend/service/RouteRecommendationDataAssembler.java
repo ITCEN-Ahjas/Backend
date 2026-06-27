@@ -20,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Service;
+import org.springframework.web.util.UriComponentsBuilder;
 
 @Service
 public class RouteRecommendationDataAssembler {
@@ -27,6 +28,7 @@ public class RouteRecommendationDataAssembler {
     private static final DateTimeFormatter TIME_FORMATTER =
             DateTimeFormatter.ofPattern("HH:mm");
     private static final int DEFAULT_PLACE_SEARCH_SIZE = 5;
+    private static final int DEFAULT_PLACE_PHOTO_WIDTH = 320;
 
     private final WeatherService weatherService;
     private final PlaceSearchService placeSearchService;
@@ -180,7 +182,7 @@ public class RouteRecommendationDataAssembler {
                 .interests(List.of(toInterest(category)))
                 .indoor(isIndoorCategory(category))
                 .address(place.getAddress())
-                .imageUrl(null)
+                .imageUrl(createPlacePhotoUrl(place.getPhotoName()))
                 .latitude(place.getLatitude())
                 .longitude(place.getLongitude())
                 .averageStayMinutes(resolveStayMinutes(category))
@@ -355,6 +357,19 @@ public class RouteRecommendationDataAssembler {
             case "museum" -> 90;
             default -> 90;
         };
+    }
+
+    private String createPlacePhotoUrl(String photoName) {
+        if (photoName == null || photoName.isBlank()) {
+            return null;
+        }
+
+        return UriComponentsBuilder.fromPath("/api/places/photo")
+                .queryParam("name", photoName)
+                .queryParam("maxWidthPx", DEFAULT_PLACE_PHOTO_WIDTH)
+                .build()
+                .encode()
+                .toUriString();
     }
 
     private String firstNonBlank(String first, String second) {

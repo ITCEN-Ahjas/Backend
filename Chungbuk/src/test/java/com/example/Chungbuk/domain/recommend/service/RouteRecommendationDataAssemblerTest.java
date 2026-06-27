@@ -66,6 +66,10 @@ class RouteRecommendationDataAssemblerTest {
                 .isEqualTo("landmark");
         assertThat(aiRequest.getCandidatePlaces().get(0).getLatitude())
                 .isEqualTo(36.65);
+        assertThat(aiRequest.getCandidatePlaces().get(0).getLongitude())
+                .isEqualTo(127.49);
+        assertThat(aiRequest.getCandidatePlaces().get(0).getImageUrl())
+                .isEqualTo("/api/places/photo?name=places/place-1/photos/photo-1&maxWidthPx=320");
     }
 
     @Test
