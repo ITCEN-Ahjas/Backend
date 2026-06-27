@@ -31,7 +31,10 @@ public class RouteRecommendationService {
                     aiRouteRecommendationClient.recommend(aiRequest);
             validateAiResponse(aiResponse);
 
-            return responseMapper.toFrontendResponse(aiResponse);
+            return responseMapper.toFrontendResponse(
+                    aiResponse,
+                    aiRequest.getCandidatePlaces()
+            );
         } catch (AiRouteRecommendationApiException exception) {
             return fallbackService.createFallbackResponse(aiRequest);
         }

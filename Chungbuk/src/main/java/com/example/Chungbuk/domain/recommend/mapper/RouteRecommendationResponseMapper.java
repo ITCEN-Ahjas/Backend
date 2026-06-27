@@ -1,9 +1,12 @@
 package com.example.Chungbuk.domain.recommend.mapper;
 
+import com.example.Chungbuk.domain.recommend.dto.ai.request.AiRouteRecommendationRequest;
 import com.example.Chungbuk.domain.recommend.dto.ai.response.AiRouteRecommendationResponse;
 import com.example.Chungbuk.domain.recommend.dto.response.RouteRecommendationResponse;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -11,6 +14,13 @@ public class RouteRecommendationResponseMapper {
 
     public RouteRecommendationResponse toFrontendResponse(
             AiRouteRecommendationResponse aiResponse
+    ) {
+        return toFrontendResponse(aiResponse, Collections.emptyList());
+    }
+
+    public RouteRecommendationResponse toFrontendResponse(
+            AiRouteRecommendationResponse aiResponse,
+            List<AiRouteRecommendationRequest.CandidatePlace> candidatePlaces
     ) {
         if (aiResponse == null) {
             return createEmptyResponse();
@@ -23,7 +33,10 @@ public class RouteRecommendationResponseMapper {
                 .routeOverview(toRouteOverview(aiResponse.getRouteOverview()))
                 .weatherNotes(toWeatherNoteSummaries(aiResponse.getWeatherNotes()))
                 .weatherNoteDetails(toWeatherNotes(aiResponse.getWeatherNotes()))
-                .itinerary(toItinerary(aiResponse.getItinerary()))
+                .itinerary(toItinerary(
+                        aiResponse.getItinerary(),
+                        candidatePlaces
+                ))
                 .planB(toPlanBSummaries(aiResponse.getPlanB()))
                 .planBOptions(toPlanBOptions(aiResponse.getPlanB()))
                 .build();
@@ -61,34 +74,57 @@ public class RouteRecommendationResponseMapper {
     }
 
     private List<RouteRecommendationResponse.ItineraryItem> toItinerary(
-            List<AiRouteRecommendationResponse.RoutePlace> itinerary
+            List<AiRouteRecommendationResponse.RoutePlace> itinerary,
+            List<AiRouteRecommendationRequest.CandidatePlace> candidatePlaces
     ) {
         if (itinerary == null) {
             return Collections.emptyList();
         }
 
+        CandidatePlaceIndex candidatePlaceIndex =
+                new CandidatePlaceIndex(candidatePlaces);
+
         return itinerary.stream()
-                .map(this::toItineraryItem)
+                .map(place -> toItineraryItem(place, candidatePlaceIndex))
                 .toList();
     }
 
     private RouteRecommendationResponse.ItineraryItem toItineraryItem(
-            AiRouteRecommendationResponse.RoutePlace place
+            AiRouteRecommendationResponse.RoutePlace place,
+            CandidatePlaceIndex candidatePlaceIndex
     ) {
+        AiRouteRecommendationRequest.CandidatePlace candidatePlace =
+                candidatePlaceIndex.find(place);
+
         return RouteRecommendationResponse.ItineraryItem.builder()
                 .day(place.getDay())
                 .order(place.getOrder())
-                .placeId(place.getPlaceId())
+                .placeId(firstNonBlank(
+                        getPlaceId(candidatePlace),
+                        place.getPlaceId()
+                ))
                 .time(place.getStartTime())
                 .startTime(place.getStartTime())
                 .endTime(place.getEndTime())
                 .placeName(place.getName())
                 .category(place.getCategory())
                 .indoor(place.isIndoor())
-                .address(place.getAddress())
-                .imageUrl(place.getImageUrl())
-                .latitude(place.getLatitude())
-                .longitude(place.getLongitude())
+                .address(firstNonBlank(
+                        getAddress(candidatePlace),
+                        place.getAddress()
+                ))
+                .imageUrl(firstNonBlank(
+                        getImageUrl(candidatePlace),
+                        place.getImageUrl()
+                ))
+                .latitude(firstNonNull(
+                        getLatitude(candidatePlace),
+                        place.getLatitude()
+                ))
+                .longitude(firstNonNull(
+                        getLongitude(candidatePlace),
+                        place.getLongitude()
+                ))
                 .description(place.getRecommendationReason())
                 .recommendationReason(place.getRecommendationReason())
                 .weatherReason(place.getWeatherReason())
@@ -170,5 +206,114 @@ public class RouteRecommendationResponseMapper {
         }
 
         return values;
+    }
+
+    private String getAddress(
+            AiRouteRecommendationRequest.CandidatePlace candidatePlace
+    ) {
+        return candidatePlace == null ? null : candidatePlace.getAddress();
+    }
+
+    private String getPlaceId(
+            AiRouteRecommendationRequest.CandidatePlace candidatePlace
+    ) {
+        return candidatePlace == null ? null : candidatePlace.getPlaceId();
+    }
+
+    private String getImageUrl(
+            AiRouteRecommendationRequest.CandidatePlace candidatePlace
+    ) {
+        return candidatePlace == null ? null : candidatePlace.getImageUrl();
+    }
+
+    private Double getLatitude(
+            AiRouteRecommendationRequest.CandidatePlace candidatePlace
+    ) {
+        return candidatePlace == null ? null : candidatePlace.getLatitude();
+    }
+
+    private Double getLongitude(
+            AiRouteRecommendationRequest.CandidatePlace candidatePlace
+    ) {
+        return candidatePlace == null ? null : candidatePlace.getLongitude();
+    }
+
+    private String firstNonBlank(String first, String second) {
+        if (first != null && !first.isBlank()) {
+            return first;
+        }
+
+        return second;
+    }
+
+    private Double firstNonNull(Double first, Double second) {
+        if (first != null) {
+            return first;
+        }
+
+        return second;
+    }
+
+    private String normalizeMatchKey(String value) {
+        if (value == null) {
+            return "";
+        }
+
+        return value.replaceAll("\\s+", "")
+                .toLowerCase();
+    }
+
+    private class CandidatePlaceIndex {
+
+        private final Map<String, AiRouteRecommendationRequest.CandidatePlace>
+                byPlaceId = new LinkedHashMap<>();
+        private final Map<String, AiRouteRecommendationRequest.CandidatePlace>
+                byName = new LinkedHashMap<>();
+
+        CandidatePlaceIndex(
+                List<AiRouteRecommendationRequest.CandidatePlace> places
+        ) {
+            if (places == null) {
+                return;
+            }
+
+            for (AiRouteRecommendationRequest.CandidatePlace place : places) {
+                if (place == null) {
+                    continue;
+                }
+
+                putIfNotBlank(byPlaceId, place.getPlaceId(), place);
+                putIfNotBlank(byName, normalizeMatchKey(place.getName()), place);
+            }
+        }
+
+        AiRouteRecommendationRequest.CandidatePlace find(
+                AiRouteRecommendationResponse.RoutePlace place
+        ) {
+            if (place == null) {
+                return null;
+            }
+
+            AiRouteRecommendationRequest.CandidatePlace candidatePlace =
+                    byPlaceId.get(place.getPlaceId());
+
+            if (candidatePlace != null) {
+                return candidatePlace;
+            }
+
+            return byName.get(normalizeMatchKey(place.getName()));
+        }
+
+        private void putIfNotBlank(
+                Map<String, AiRouteRecommendationRequest.CandidatePlace> map,
+                String key,
+                AiRouteRecommendationRequest.CandidatePlace place
+        ) {
+            if (key == null || key.isBlank()) {
+                return;
+            }
+
+            map.putIfAbsent(key, place);
+        }
     }
 }

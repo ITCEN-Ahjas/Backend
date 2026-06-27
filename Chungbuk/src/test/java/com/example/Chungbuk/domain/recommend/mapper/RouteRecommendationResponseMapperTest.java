@@ -2,6 +2,7 @@ package com.example.Chungbuk.domain.recommend.mapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.example.Chungbuk.domain.recommend.dto.ai.request.AiRouteRecommendationRequest;
 import com.example.Chungbuk.domain.recommend.dto.ai.response.AiRouteRecommendationResponse;
 import com.example.Chungbuk.domain.recommend.dto.response.RouteRecommendationResponse;
 import java.util.List;
@@ -77,6 +78,75 @@ class RouteRecommendationResponseMapperTest {
         assertThat(response.getPlanBOptions()).isEmpty();
     }
 
+    @Test
+    void enrichesAiItineraryWithCandidatePlaceByPlaceId() {
+        AiRouteRecommendationResponse aiResponse = createAiResponse();
+        AiRouteRecommendationResponse.RoutePlace place =
+                aiResponse.getItinerary().get(0);
+        place.setAddress(null);
+        place.setImageUrl(null);
+        place.setLatitude(null);
+        place.setLongitude(null);
+
+        RouteRecommendationResponse response =
+                mapper.toFrontendResponse(
+                        aiResponse,
+                        List.of(createCandidatePlace(
+                                "place-1",
+                                "Different Name",
+                                "Candidate Address",
+                                "/api/places/photo?name=photo-1&maxWidthPx=320",
+                                36.7,
+                                127.5
+                        ))
+                );
+
+        RouteRecommendationResponse.ItineraryItem item =
+                response.getItinerary().get(0);
+
+        assertThat(item.getPlaceId()).isEqualTo("place-1");
+        assertThat(item.getAddress()).isEqualTo("Candidate Address");
+        assertThat(item.getImageUrl())
+                .isEqualTo("/api/places/photo?name=photo-1&maxWidthPx=320");
+        assertThat(item.getLatitude()).isEqualTo(36.7);
+        assertThat(item.getLongitude()).isEqualTo(127.5);
+    }
+
+    @Test
+    void enrichesAiItineraryWithCandidatePlaceByNameWhenPlaceIdDoesNotMatch() {
+        AiRouteRecommendationResponse aiResponse = createAiResponse();
+        AiRouteRecommendationResponse.RoutePlace place =
+                aiResponse.getItinerary().get(0);
+        place.setPlaceId("ai-place-id");
+        place.setAddress(null);
+        place.setImageUrl(null);
+        place.setLatitude(null);
+        place.setLongitude(null);
+
+        RouteRecommendationResponse response =
+                mapper.toFrontendResponse(
+                        aiResponse,
+                        List.of(createCandidatePlace(
+                                "candidate-place-id",
+                                "Sangdang Sanseong",
+                                "Candidate Address",
+                                "/api/places/photo?name=photo-1&maxWidthPx=320",
+                                36.7,
+                                127.5
+                        ))
+                );
+
+        RouteRecommendationResponse.ItineraryItem item =
+                response.getItinerary().get(0);
+
+        assertThat(item.getPlaceId()).isEqualTo("candidate-place-id");
+        assertThat(item.getAddress()).isEqualTo("Candidate Address");
+        assertThat(item.getImageUrl())
+                .isEqualTo("/api/places/photo?name=photo-1&maxWidthPx=320");
+        assertThat(item.getLatitude()).isEqualTo(36.7);
+        assertThat(item.getLongitude()).isEqualTo(127.5);
+    }
+
     private AiRouteRecommendationResponse createAiResponse() {
         AiRouteRecommendationResponse response =
                 new AiRouteRecommendationResponse();
@@ -134,5 +204,29 @@ class RouteRecommendationResponseMapperTest {
         response.setWeatherNotes(List.of(weatherNote));
 
         return response;
+    }
+
+    private AiRouteRecommendationRequest.CandidatePlace createCandidatePlace(
+            String placeId,
+            String name,
+            String address,
+            String imageUrl,
+            Double latitude,
+            Double longitude
+    ) {
+        return AiRouteRecommendationRequest.CandidatePlace.builder()
+                .placeId(placeId)
+                .name(name)
+                .category("landmark")
+                .interests(List.of("nature"))
+                .indoor(false)
+                .address(address)
+                .imageUrl(imageUrl)
+                .latitude(latitude)
+                .longitude(longitude)
+                .averageStayMinutes(90)
+                .openTime("09:00")
+                .closeTime("20:00")
+                .build();
     }
 }

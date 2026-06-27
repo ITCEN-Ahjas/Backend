@@ -2,6 +2,7 @@ package com.example.Chungbuk.domain.recommend.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -53,7 +54,10 @@ class RouteRecommendationServiceTest {
 
         when(dataAssembler.assemble(any())).thenReturn(aiRequest);
         when(aiClient.recommend(aiRequest)).thenReturn(aiResponse);
-        when(responseMapper.toFrontendResponse(aiResponse))
+        when(responseMapper.toFrontendResponse(
+                eq(aiResponse),
+                eq(aiRequest.getCandidatePlaces())
+        ))
                 .thenReturn(expectedResponse);
 
         RouteRecommendationResponse actualResponse =
