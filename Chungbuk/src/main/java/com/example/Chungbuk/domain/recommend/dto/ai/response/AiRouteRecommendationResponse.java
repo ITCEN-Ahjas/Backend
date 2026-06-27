@@ -1,28 +1,26 @@
-package com.example.Chungbuk.domain.recommend.dto.response;
+package com.example.Chungbuk.domain.recommend.dto.ai.response;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Getter;
+import lombok.Setter;
 
 @Getter
-@Builder
-@AllArgsConstructor
-public class RouteRecommendationResponse {
+@Setter
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class AiRouteRecommendationResponse {
 
     private String region;
     private String source;
     private String summary;
     private RouteOverview routeOverview;
-    private List<String> weatherNotes;
-    private List<WeatherNote> weatherNoteDetails;
-    private List<ItineraryItem> itinerary;
-    private List<String> planB;
-    private List<PlanBOption> planBOptions;
+    private List<RoutePlace> itinerary;
+    private List<PlanBOption> planB;
+    private List<WeatherNote> weatherNotes;
 
     @Getter
-    @Builder
-    @AllArgsConstructor
+    @Setter
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class RouteOverview {
 
         private String title;
@@ -36,32 +34,30 @@ public class RouteRecommendationResponse {
     }
 
     @Getter
-    @Builder
-    @AllArgsConstructor
-    public static class ItineraryItem {
+    @Setter
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class RoutePlace {
 
         private int day;
         private int order;
         private String placeId;
-        private String time;
+        private String name;
+        private String category;
         private String startTime;
         private String endTime;
-        private String placeName;
-        private String category;
         private boolean indoor;
         private String address;
         private String imageUrl;
         private Double latitude;
         private Double longitude;
-        private String description;
         private String recommendationReason;
         private String weatherReason;
         private String moveTip;
     }
 
     @Getter
-    @Builder
-    @AllArgsConstructor
+    @Setter
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class PlanBOption {
 
         private String triggerCondition;
@@ -71,8 +67,8 @@ public class RouteRecommendationResponse {
     }
 
     @Getter
-    @Builder
-    @AllArgsConstructor
+    @Setter
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class WeatherNote {
 
         private String timeRange;

@@ -1,0 +1,214 @@
+package com.example.Chungbuk.domain.recommend.service;
+
+import com.example.Chungbuk.domain.recommend.dto.ai.request.AiRouteRecommendationRequest;
+import com.example.Chungbuk.domain.recommend.dto.response.RouteRecommendationResponse;
+import java.util.Collections;
+import java.util.List;
+import org.springframework.stereotype.Service;
+
+@Service
+public class RouteRecommendationFallbackService {
+
+    public RouteRecommendationResponse createFallbackResponse(
+            AiRouteRecommendationRequest aiRequest
+    ) {
+        List<AiRouteRecommendationRequest.CandidatePlace> places =
+                getCandidatePlaces(aiRequest);
+        AiRouteRecommendationRequest.Preference preference =
+                getPreference(aiRequest);
+        AiRouteRecommendationRequest.Constraint constraint =
+                getConstraint(aiRequest);
+        String region = valueOrDefault(
+                aiRequest == null ? null : aiRequest.getRegion(),
+                "Chungbuk"
+        );
+
+        List<RouteRecommendationResponse.ItineraryItem> itinerary =
+                places.stream()
+                        .limit(3)
+                        .map(place -> toItineraryItem(
+                                places,
+                                preference,
+                                constraint,
+                                place
+                        ))
+                        .toList();
+
+        int totalStayMinutes = places.stream()
+                .limit(3)
+                .mapToInt(AiRouteRecommendationRequest.CandidatePlace::getAverageStayMinutes)
+                .sum();
+
+        return RouteRecommendationResponse.builder()
+                .region(region)
+                .source("fallback")
+                .summary("AI server is unavailable, so a basic route was created from candidate places.")
+                .routeOverview(RouteRecommendationResponse.RouteOverview.builder()
+                        .title(region + " fallback travel route")
+                        .region(region)
+                        .totalPlaces(itinerary.size())
+                        .totalStayMinutes(totalStayMinutes)
+                        .startLocation(constraint.getStartLocation())
+                        .endLocation(constraint.getEndLocation())
+                        .styleTags(List.of(
+                                preference.getActivityPace(),
+                                preference.getTransportMode()
+                        ))
+                        .weatherSummary("Fallback route uses the available weather and place data.")
+                        .build())
+                .weatherNotes(List.of(
+                        "AI server did not respond, so weather notes were simplified."
+                ))
+                .weatherNoteDetails(List.of(
+                        RouteRecommendationResponse.WeatherNote.builder()
+                                .timeRange(constraint.getStartTime()
+                                        + "-"
+                                        + constraint.getEndTime())
+                                .summary("Fallback route uses basic weather assumptions.")
+                                .cautionLevel("low")
+                                .build()
+                ))
+                .itinerary(itinerary)
+                .planB(List.of(
+                        "If weather worsens, prioritize indoor places such as restaurants, cafes, museums, or shopping spots."
+                ))
+                .planBOptions(Collections.emptyList())
+                .build();
+    }
+
+    private RouteRecommendationResponse.ItineraryItem toItineraryItem(
+            List<AiRouteRecommendationRequest.CandidatePlace> places,
+            AiRouteRecommendationRequest.Preference preference,
+            AiRouteRecommendationRequest.Constraint constraint,
+            AiRouteRecommendationRequest.CandidatePlace place
+    ) {
+        int order = places.indexOf(place) + 1;
+        String startTime = constraint.getStartTime();
+
+        return RouteRecommendationResponse.ItineraryItem.builder()
+                .day(1)
+                .order(order)
+                .placeId(place.getPlaceId())
+                .time(startTime)
+                .startTime(startTime)
+                .endTime(constraint.getEndTime())
+                .placeName(place.getName())
+                .category(place.getCategory())
+                .indoor(place.isIndoor())
+                .address(place.getAddress())
+                .imageUrl(place.getImageUrl())
+                .latitude(place.getLatitude())
+                .longitude(place.getLongitude())
+                .description("Selected from available candidate places.")
+                .recommendationReason("Selected from available candidate places.")
+                .weatherReason("Fallback route keeps the schedule simple when AI recommendation is unavailable.")
+                .moveTip(createMoveTip(preference.getTransportMode()))
+                .build();
+    }
+
+    private String createMoveTip(String transportMode) {
+        return switch (transportMode) {
+            case "walk" -> "Keep the route compact for walking.";
+            case "public_transport" -> "Check public transport intervals before moving.";
+            case "taxi" -> "Use taxi for long gaps between places.";
+            default -> "Check parking and congestion before moving by car.";
+        };
+    }
+
+    private List<AiRouteRecommendationRequest.CandidatePlace> getCandidatePlaces(
+            AiRouteRecommendationRequest aiRequest
+    ) {
+        if (aiRequest == null || aiRequest.getCandidatePlaces() == null) {
+            return Collections.emptyList();
+        }
+
+        return aiRequest.getCandidatePlaces();
+    }
+
+    private AiRouteRecommendationRequest.Preference getPreference(
+            AiRouteRecommendationRequest aiRequest
+    ) {
+        if (aiRequest != null && aiRequest.getPreference() != null) {
+            AiRouteRecommendationRequest.Preference preference =
+                    aiRequest.getPreference();
+            return AiRouteRecommendationRequest.Preference.builder()
+                    .interests(nullToEmpty(preference.getInterests()))
+                    .companionType(valueOrDefault(
+                            preference.getCompanionType(),
+                            "unknown"
+                    ))
+                    .budgetLevel(valueOrDefault(
+                            preference.getBudgetLevel(),
+                            "medium"
+                    ))
+                    .activityPace(valueOrDefault(
+                            preference.getActivityPace(),
+                            "balanced"
+                    ))
+                    .transportMode(valueOrDefault(
+                            preference.getTransportMode(),
+                            "car"
+                    ))
+                    .build();
+        }
+
+        return AiRouteRecommendationRequest.Preference.builder()
+                .interests(Collections.emptyList())
+                .companionType("unknown")
+                .budgetLevel("medium")
+                .activityPace("balanced")
+                .transportMode("car")
+                .build();
+    }
+
+    private AiRouteRecommendationRequest.Constraint getConstraint(
+            AiRouteRecommendationRequest aiRequest
+    ) {
+        if (aiRequest != null && aiRequest.getConstraint() != null) {
+            AiRouteRecommendationRequest.Constraint constraint =
+                    aiRequest.getConstraint();
+            return AiRouteRecommendationRequest.Constraint.builder()
+                    .travelDate(constraint.getTravelDate())
+                    .startTime(valueOrDefault(
+                            constraint.getStartTime(),
+                            "09:00"
+                    ))
+                    .endTime(valueOrDefault(
+                            constraint.getEndTime(),
+                            "18:00"
+                    ))
+                    .startLocation(valueOrDefault(
+                            constraint.getStartLocation(),
+                            "Start location"
+                    ))
+                    .endLocation(valueOrDefault(
+                            constraint.getEndLocation(),
+                            "End location"
+                    ))
+                    .build();
+        }
+
+        return AiRouteRecommendationRequest.Constraint.builder()
+                .startTime("09:00")
+                .endTime("18:00")
+                .startLocation("Start location")
+                .endLocation("End location")
+                .build();
+    }
+
+    private List<String> nullToEmpty(List<String> values) {
+        if (values == null) {
+            return Collections.emptyList();
+        }
+
+        return values;
+    }
+
+    private String valueOrDefault(String value, String defaultValue) {
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+
+        return value;
+    }
+}
