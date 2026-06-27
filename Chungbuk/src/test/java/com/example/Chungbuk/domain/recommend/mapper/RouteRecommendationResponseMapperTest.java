@@ -26,6 +26,12 @@ class RouteRecommendationResponseMapperTest {
                 .isEqualTo("Weather-aware Cheongju route.");
         assertThat(response.getRouteOverview().getTotalPlaces())
                 .isEqualTo(2);
+        assertThat(response.getTotalDistance()).isEqualTo("0.0km");
+        assertThat(response.getTotalDuration()).isEqualTo("2h 50min");
+        assertThat(response.getRouteOverview().getTotalDistance())
+                .isEqualTo("0.0km");
+        assertThat(response.getRouteOverview().getTotalDuration())
+                .isEqualTo("2h 50min");
         assertThat(response.getRouteOverview().getStyleTags())
                 .containsExactly("balanced", "car");
 

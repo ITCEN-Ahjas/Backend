@@ -25,6 +25,12 @@ class RouteRecommendationFallbackServiceTest {
                 .isEqualTo("place-1");
         assertThat(response.getItinerary().get(0).getLatitude())
                 .isEqualTo(36.65);
+        assertThat(response.getTotalDistance()).isEqualTo("0.0km");
+        assertThat(response.getTotalDuration()).isEqualTo("1h 30min");
+        assertThat(response.getRouteOverview().getTotalDistance())
+                .isEqualTo("0.0km");
+        assertThat(response.getRouteOverview().getTotalDuration())
+                .isEqualTo("1h 30min");
         assertThat(response.getWeatherNoteDetails()).hasSize(1);
         assertThat(response.getPlanB()).hasSize(1);
     }

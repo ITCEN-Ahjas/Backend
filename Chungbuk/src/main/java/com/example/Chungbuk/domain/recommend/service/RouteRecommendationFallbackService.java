@@ -5,10 +5,13 @@ import com.example.Chungbuk.domain.recommend.dto.response.RouteRecommendationRes
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import org.springframework.stereotype.Service;
 
 @Service
 public class RouteRecommendationFallbackService {
+
+    private static final double EARTH_RADIUS_KILOMETERS = 6371.0;
 
     public RouteRecommendationResponse createFallbackResponse(
             AiRouteRecommendationRequest aiRequest
@@ -43,16 +46,24 @@ public class RouteRecommendationFallbackService {
         int totalStayMinutes = selectedPlaces.stream()
                 .mapToInt(AiRouteRecommendationRequest.CandidatePlace::getAverageStayMinutes)
                 .sum();
+        String totalDistance = formatDistance(calculateRouteDistance(
+                itinerary
+        ));
+        String totalDuration = formatDuration(totalStayMinutes);
 
         return RouteRecommendationResponse.builder()
                 .region(region)
                 .source("fallback")
                 .summary("AI server is unavailable, so a basic route was created from candidate places.")
+                .totalDistance(totalDistance)
+                .totalDuration(totalDuration)
                 .routeOverview(RouteRecommendationResponse.RouteOverview.builder()
                         .title(region + " fallback travel route")
                         .region(region)
                         .totalPlaces(itinerary.size())
                         .totalStayMinutes(totalStayMinutes)
+                        .totalDistance(totalDistance)
+                        .totalDuration(totalDuration)
                         .startLocation(constraint.getStartLocation())
                         .endLocation(constraint.getEndLocation())
                         .styleTags(List.of(
@@ -199,6 +210,90 @@ public class RouteRecommendationFallbackService {
         return place != null
                 && place.getLatitude() != null
                 && place.getLongitude() != null;
+    }
+
+    private double calculateRouteDistance(
+            List<RouteRecommendationResponse.ItineraryItem> itinerary
+    ) {
+        if (itinerary == null || itinerary.size() < 2) {
+            return 0.0;
+        }
+
+        double distance = 0.0;
+        RouteRecommendationResponse.ItineraryItem previous = null;
+
+        for (RouteRecommendationResponse.ItineraryItem current : itinerary) {
+            if (!hasCoordinate(current)) {
+                continue;
+            }
+
+            if (previous != null) {
+                distance += calculateDistance(previous, current);
+            }
+
+            previous = current;
+        }
+
+        return distance;
+    }
+
+    private boolean hasCoordinate(
+            RouteRecommendationResponse.ItineraryItem item
+    ) {
+        return item != null
+                && item.getLatitude() != null
+                && item.getLongitude() != null;
+    }
+
+    private double calculateDistance(
+            RouteRecommendationResponse.ItineraryItem first,
+            RouteRecommendationResponse.ItineraryItem second
+    ) {
+        double latitudeDistance = Math.toRadians(
+                second.getLatitude() - first.getLatitude()
+        );
+        double longitudeDistance = Math.toRadians(
+                second.getLongitude() - first.getLongitude()
+        );
+        double firstLatitude = Math.toRadians(first.getLatitude());
+        double secondLatitude = Math.toRadians(second.getLatitude());
+        double haversine = Math.sin(latitudeDistance / 2)
+                * Math.sin(latitudeDistance / 2)
+                + Math.cos(firstLatitude)
+                * Math.cos(secondLatitude)
+                * Math.sin(longitudeDistance / 2)
+                * Math.sin(longitudeDistance / 2);
+
+        return EARTH_RADIUS_KILOMETERS
+                * 2
+                * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+    }
+
+    private String formatDistance(double distance) {
+        if (distance <= 0.0) {
+            return "0.0km";
+        }
+
+        return String.format(Locale.US, "%.1fkm", distance);
+    }
+
+    private String formatDuration(int totalStayMinutes) {
+        if (totalStayMinutes <= 0) {
+            return "0min";
+        }
+
+        int hours = totalStayMinutes / 60;
+        int minutes = totalStayMinutes % 60;
+
+        if (hours > 0 && minutes > 0) {
+            return hours + "h " + minutes + "min";
+        }
+
+        if (hours > 0) {
+            return hours + "h";
+        }
+
+        return minutes + "min";
     }
 
     private String createMoveTip(String transportMode) {

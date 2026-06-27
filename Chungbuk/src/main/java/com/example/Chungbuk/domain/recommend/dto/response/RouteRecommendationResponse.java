@@ -13,6 +13,8 @@ public class RouteRecommendationResponse {
     private String region;
     private String source;
     private String summary;
+    private String totalDistance;
+    private String totalDuration;
     private RouteOverview routeOverview;
     private List<String> weatherNotes;
     private List<WeatherNote> weatherNoteDetails;
@@ -29,6 +31,8 @@ public class RouteRecommendationResponse {
         private String region;
         private int totalPlaces;
         private int totalStayMinutes;
+        private String totalDistance;
+        private String totalDuration;
         private String startLocation;
         private String endLocation;
         private List<String> styleTags;

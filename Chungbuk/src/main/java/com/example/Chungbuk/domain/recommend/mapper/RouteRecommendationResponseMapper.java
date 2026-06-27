@@ -6,11 +6,14 @@ import com.example.Chungbuk.domain.recommend.dto.response.RouteRecommendationRes
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import org.springframework.stereotype.Component;
 
 @Component
 public class RouteRecommendationResponseMapper {
+
+    private static final double EARTH_RADIUS_KILOMETERS = 6371.0;
 
     public RouteRecommendationResponse toFrontendResponse(
             AiRouteRecommendationResponse aiResponse
@@ -26,17 +29,25 @@ public class RouteRecommendationResponseMapper {
             return createEmptyResponse();
         }
 
+        List<RouteRecommendationResponse.ItineraryItem> itinerary =
+                toItinerary(aiResponse.getItinerary(), candidatePlaces);
+        RouteRecommendationResponse.RouteOverview routeOverview =
+                toRouteOverview(aiResponse.getRouteOverview(), itinerary);
+
         return RouteRecommendationResponse.builder()
                 .region(aiResponse.getRegion())
                 .source(aiResponse.getSource())
                 .summary(aiResponse.getSummary())
-                .routeOverview(toRouteOverview(aiResponse.getRouteOverview()))
+                .totalDistance(routeOverview == null
+                        ? null
+                        : routeOverview.getTotalDistance())
+                .totalDuration(routeOverview == null
+                        ? null
+                        : routeOverview.getTotalDuration())
+                .routeOverview(routeOverview)
                 .weatherNotes(toWeatherNoteSummaries(aiResponse.getWeatherNotes()))
                 .weatherNoteDetails(toWeatherNotes(aiResponse.getWeatherNotes()))
-                .itinerary(toItinerary(
-                        aiResponse.getItinerary(),
-                        candidatePlaces
-                ))
+                .itinerary(itinerary)
                 .planB(toPlanBSummaries(aiResponse.getPlanB()))
                 .planBOptions(toPlanBOptions(aiResponse.getPlanB()))
                 .build();
@@ -55,17 +66,27 @@ public class RouteRecommendationResponseMapper {
     }
 
     private RouteRecommendationResponse.RouteOverview toRouteOverview(
-            AiRouteRecommendationResponse.RouteOverview overview
+            AiRouteRecommendationResponse.RouteOverview overview,
+            List<RouteRecommendationResponse.ItineraryItem> itinerary
     ) {
         if (overview == null) {
             return null;
         }
 
+        int totalPlaces = overview.getTotalPlaces() > 0
+                ? overview.getTotalPlaces()
+                : itinerary.size();
+        int totalStayMinutes = overview.getTotalStayMinutes();
+
         return RouteRecommendationResponse.RouteOverview.builder()
                 .title(overview.getTitle())
                 .region(overview.getRegion())
-                .totalPlaces(overview.getTotalPlaces())
-                .totalStayMinutes(overview.getTotalStayMinutes())
+                .totalPlaces(totalPlaces)
+                .totalStayMinutes(totalStayMinutes)
+                .totalDistance(formatDistance(calculateRouteDistance(
+                        itinerary
+                )))
+                .totalDuration(formatDuration(totalStayMinutes))
                 .startLocation(overview.getStartLocation())
                 .endLocation(overview.getEndLocation())
                 .styleTags(nullToEmpty(overview.getStyleTags()))
@@ -206,6 +227,90 @@ public class RouteRecommendationResponseMapper {
         }
 
         return values;
+    }
+
+    private double calculateRouteDistance(
+            List<RouteRecommendationResponse.ItineraryItem> itinerary
+    ) {
+        if (itinerary == null || itinerary.size() < 2) {
+            return 0.0;
+        }
+
+        double distance = 0.0;
+        RouteRecommendationResponse.ItineraryItem previous = null;
+
+        for (RouteRecommendationResponse.ItineraryItem current : itinerary) {
+            if (!hasCoordinate(current)) {
+                continue;
+            }
+
+            if (previous != null) {
+                distance += calculateDistance(previous, current);
+            }
+
+            previous = current;
+        }
+
+        return distance;
+    }
+
+    private boolean hasCoordinate(
+            RouteRecommendationResponse.ItineraryItem item
+    ) {
+        return item != null
+                && item.getLatitude() != null
+                && item.getLongitude() != null;
+    }
+
+    private double calculateDistance(
+            RouteRecommendationResponse.ItineraryItem first,
+            RouteRecommendationResponse.ItineraryItem second
+    ) {
+        double latitudeDistance = Math.toRadians(
+                second.getLatitude() - first.getLatitude()
+        );
+        double longitudeDistance = Math.toRadians(
+                second.getLongitude() - first.getLongitude()
+        );
+        double firstLatitude = Math.toRadians(first.getLatitude());
+        double secondLatitude = Math.toRadians(second.getLatitude());
+        double haversine = Math.sin(latitudeDistance / 2)
+                * Math.sin(latitudeDistance / 2)
+                + Math.cos(firstLatitude)
+                * Math.cos(secondLatitude)
+                * Math.sin(longitudeDistance / 2)
+                * Math.sin(longitudeDistance / 2);
+
+        return EARTH_RADIUS_KILOMETERS
+                * 2
+                * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+    }
+
+    private String formatDistance(double distance) {
+        if (distance <= 0.0) {
+            return "0.0km";
+        }
+
+        return String.format(Locale.US, "%.1fkm", distance);
+    }
+
+    private String formatDuration(int totalStayMinutes) {
+        if (totalStayMinutes <= 0) {
+            return "0min";
+        }
+
+        int hours = totalStayMinutes / 60;
+        int minutes = totalStayMinutes % 60;
+
+        if (hours > 0 && minutes > 0) {
+            return hours + "h " + minutes + "min";
+        }
+
+        if (hours > 0) {
+            return hours + "h";
+        }
+
+        return minutes + "min";
     }
 
     private String getAddress(
