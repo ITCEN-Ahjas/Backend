@@ -2,6 +2,7 @@ package com.example.Chungbuk.domain.recommend.service;
 
 import com.example.Chungbuk.domain.recommend.dto.ai.request.AiRouteRecommendationRequest;
 import com.example.Chungbuk.domain.recommend.dto.response.RouteRecommendationResponse;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import org.springframework.stereotype.Service;
@@ -22,20 +23,24 @@ public class RouteRecommendationFallbackService {
                 aiRequest == null ? null : aiRequest.getRegion(),
                 "Chungbuk"
         );
+        List<AiRouteRecommendationRequest.CandidatePlace> sortedPlaces =
+                sortByNearestCoordinate(places);
+        List<AiRouteRecommendationRequest.CandidatePlace> selectedPlaces =
+                sortedPlaces.stream()
+                        .limit(3)
+                        .toList();
 
         List<RouteRecommendationResponse.ItineraryItem> itinerary =
-                places.stream()
-                        .limit(3)
+                selectedPlaces.stream()
                         .map(place -> toItineraryItem(
-                                places,
                                 preference,
                                 constraint,
-                                place
+                                place,
+                                selectedPlaces.indexOf(place) + 1
                         ))
                         .toList();
 
-        int totalStayMinutes = places.stream()
-                .limit(3)
+        int totalStayMinutes = selectedPlaces.stream()
                 .mapToInt(AiRouteRecommendationRequest.CandidatePlace::getAverageStayMinutes)
                 .sum();
 
@@ -77,12 +82,11 @@ public class RouteRecommendationFallbackService {
     }
 
     private RouteRecommendationResponse.ItineraryItem toItineraryItem(
-            List<AiRouteRecommendationRequest.CandidatePlace> places,
             AiRouteRecommendationRequest.Preference preference,
             AiRouteRecommendationRequest.Constraint constraint,
-            AiRouteRecommendationRequest.CandidatePlace place
+            AiRouteRecommendationRequest.CandidatePlace place,
+            int order
     ) {
-        int order = places.indexOf(place) + 1;
         String startTime = constraint.getStartTime();
 
         return RouteRecommendationResponse.ItineraryItem.builder()
@@ -104,6 +108,97 @@ public class RouteRecommendationFallbackService {
                 .weatherReason("Fallback route keeps the schedule simple when AI recommendation is unavailable.")
                 .moveTip(createMoveTip(preference.getTransportMode()))
                 .build();
+    }
+
+    private List<AiRouteRecommendationRequest.CandidatePlace>
+    sortByNearestCoordinate(
+            List<AiRouteRecommendationRequest.CandidatePlace> places
+    ) {
+        if (places.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<AiRouteRecommendationRequest.CandidatePlace> remaining =
+                new ArrayList<>(places);
+        List<AiRouteRecommendationRequest.CandidatePlace> sorted =
+                new ArrayList<>();
+
+        AiRouteRecommendationRequest.CandidatePlace current =
+                removeFirstPlaceWithCoordinate(remaining);
+
+        if (current == null) {
+            return remaining;
+        }
+
+        sorted.add(current);
+
+        while (!remaining.isEmpty()) {
+            AiRouteRecommendationRequest.CandidatePlace next =
+                    removeNearestPlace(remaining, current);
+            sorted.add(next);
+            current = next;
+        }
+
+        return sorted;
+    }
+
+    private AiRouteRecommendationRequest.CandidatePlace
+    removeFirstPlaceWithCoordinate(
+            List<AiRouteRecommendationRequest.CandidatePlace> places
+    ) {
+        for (int index = 0; index < places.size(); index++) {
+            AiRouteRecommendationRequest.CandidatePlace place =
+                    places.get(index);
+
+            if (hasCoordinate(place)) {
+                return places.remove(index);
+            }
+        }
+
+        return null;
+    }
+
+    private AiRouteRecommendationRequest.CandidatePlace removeNearestPlace(
+            List<AiRouteRecommendationRequest.CandidatePlace> places,
+            AiRouteRecommendationRequest.CandidatePlace current
+    ) {
+        int nearestIndex = 0;
+        double nearestDistance = Double.MAX_VALUE;
+
+        for (int index = 0; index < places.size(); index++) {
+            AiRouteRecommendationRequest.CandidatePlace place =
+                    places.get(index);
+            double distance = calculateDistance(current, place);
+
+            if (distance < nearestDistance) {
+                nearestDistance = distance;
+                nearestIndex = index;
+            }
+        }
+
+        return places.remove(nearestIndex);
+    }
+
+    private double calculateDistance(
+            AiRouteRecommendationRequest.CandidatePlace current,
+            AiRouteRecommendationRequest.CandidatePlace next
+    ) {
+        if (!hasCoordinate(current) || !hasCoordinate(next)) {
+            return Double.MAX_VALUE;
+        }
+
+        double latitudeDiff = current.getLatitude() - next.getLatitude();
+        double longitudeDiff = current.getLongitude() - next.getLongitude();
+
+        return latitudeDiff * latitudeDiff + longitudeDiff * longitudeDiff;
+    }
+
+    private boolean hasCoordinate(
+            AiRouteRecommendationRequest.CandidatePlace place
+    ) {
+        return place != null
+                && place.getLatitude() != null
+                && place.getLongitude() != null;
     }
 
     private String createMoveTip(String transportMode) {
