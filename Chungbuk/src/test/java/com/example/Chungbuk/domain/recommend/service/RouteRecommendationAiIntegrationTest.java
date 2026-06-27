@@ -73,10 +73,15 @@ class RouteRecommendationAiIntegrationTest {
         assertThat(response.getItinerary()).hasSize(1);
         assertThat(response.getItinerary().get(0).getPlaceName())
                 .isEqualTo("Local Restaurant");
+        assertThat(response.getItinerary().get(0).getImageUrl())
+                .isEqualTo("/api/places/photo?name=places/restaurant-1/photos/photo-1&maxWidthPx=320");
         assertThat(response.getItinerary().get(0).getLatitude())
                 .isEqualTo(36.65);
+        assertThat(response.getTotalDistance()).isEqualTo("0.0km");
+        assertThat(response.getTotalDuration()).isEqualTo("1h 20min");
         assertThat(response.getWeatherNotes()).hasSize(1);
         assertThat(response.getPlanB()).hasSize(1);
+        assertThat(response.getPlanBOptions()).hasSize(1);
 
         AiRouteRecommendationRequest aiRequest = captureAiRequest();
 
@@ -93,6 +98,8 @@ class RouteRecommendationAiIntegrationTest {
                 .isEqualTo("restaurant");
         assertThat(aiRequest.getCandidatePlaces().get(0).getLatitude())
                 .isEqualTo(36.65);
+        assertThat(aiRequest.getCandidatePlaces().get(0).getImageUrl())
+                .isEqualTo("/api/places/photo?name=places/restaurant-1/photos/photo-1&maxWidthPx=320");
     }
 
     @Test
@@ -120,8 +127,12 @@ class RouteRecommendationAiIntegrationTest {
         assertThat(response.getItinerary()).hasSize(1);
         assertThat(response.getItinerary().get(0).getPlaceName())
                 .isEqualTo("Local Restaurant");
+        assertThat(response.getItinerary().get(0).getImageUrl())
+                .isEqualTo("/api/places/photo?name=places/restaurant-1/photos/photo-1&maxWidthPx=320");
         assertThat(response.getItinerary().get(0).getLatitude())
                 .isEqualTo(36.65);
+        assertThat(response.getTotalDistance()).isEqualTo("0.0km");
+        assertThat(response.getTotalDuration()).isEqualTo("1h 20min");
         assertThat(response.getSummary()).contains("AI server");
         assertThat(response.getWeatherNotes()).isNotEmpty();
         assertThat(response.getPlanB()).isNotEmpty();
