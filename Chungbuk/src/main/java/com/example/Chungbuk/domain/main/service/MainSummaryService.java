@@ -11,6 +11,11 @@ import com.example.Chungbuk.domain.main.dto.response.MainSummaryResponse.Popular
 import com.example.Chungbuk.domain.main.dto.response.MainSummaryResponse.TodayStatResponse;
 import com.example.Chungbuk.domain.main.dto.response.MainSummaryResponse.WeatherRegionResponse;
 import com.example.Chungbuk.domain.main.dto.response.MainSummaryResponse.WeatherResponse;
+import com.example.Chungbuk.domain.weather.dto.request.RegionWeatherRequest;
+import com.example.Chungbuk.domain.weather.dto.response.CurrentWeatherResponse;
+import com.example.Chungbuk.domain.weather.dto.response.FeelsLikeWeatherResponse;
+import com.example.Chungbuk.domain.weather.dto.response.WeatherPageResponse;
+import com.example.Chungbuk.domain.weather.service.WeatherService;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -21,10 +26,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class MainSummaryService {
 
     private static final String FESTIVAL_CONTENT_TYPE_ID = "15";
+    private static final String PRIMARY_WEATHER_REGION = "청주";
+    private static final String SECONDARY_WEATHER_REGION = "충주";
 
     private final FestivalContentRepository festivalContentRepository;
     private final AccommodationRepository accommodationRepository;
     private final CampingRepository campingRepository;
+    private final WeatherService weatherService;
 
     @Transactional(readOnly = true)
     public MainSummaryResponse getMainSummary() {
@@ -33,7 +41,7 @@ public class MainSummaryService {
                 createPopularRegions(),
                 createKeywords(),
                 createTodayStats(),
-                createDefaultWeather(),
+                createWeather(),
                 createFeatureCards()
         );
     }
@@ -137,6 +145,103 @@ public class MainSummaryService {
         );
     }
 
+    private WeatherResponse createWeather() {
+        try {
+            WeatherPageResponse primaryWeather =
+                    getRegionWeather(PRIMARY_WEATHER_REGION);
+            WeatherPageResponse secondaryWeather =
+                    getRegionWeather(SECONDARY_WEATHER_REGION);
+
+            return createWeatherResponse(
+                    primaryWeather,
+                    List.of(
+                            createWeatherRegion(
+                                    "cheongju-weather",
+                                    PRIMARY_WEATHER_REGION,
+                                    primaryWeather
+                            ),
+                            createWeatherRegion(
+                                    "chungju-weather",
+                                    SECONDARY_WEATHER_REGION,
+                                    secondaryWeather
+                            )
+                    )
+            );
+        } catch (RuntimeException exception) {
+            return createDefaultWeather();
+        }
+    }
+
+    private WeatherPageResponse getRegionWeather(String region) {
+        RegionWeatherRequest request = new RegionWeatherRequest();
+        request.setRegion(region);
+
+        return weatherService.getRegionWeather(request);
+    }
+
+    private WeatherResponse createWeatherResponse(
+            WeatherPageResponse primaryWeather,
+            List<WeatherRegionResponse> regions
+    ) {
+        CurrentWeatherResponse currentWeather =
+                primaryWeather.getCurrentWeather();
+        FeelsLikeWeatherResponse feelsLikeWeather =
+                primaryWeather.getFeelsLikeWeather();
+
+        return new WeatherResponse(
+                PRIMARY_WEATHER_REGION,
+                formatTemperature(currentWeather.getTemperature()),
+                currentWeather.getWeatherCondition(),
+                formatTemperature(
+                        feelsLikeWeather.getFeelsLikeTemperature()
+                ),
+                currentWeather.getPrecipitationProbability() + "%",
+                currentWeather.getHumidity() + "%",
+                formatWind(currentWeather),
+                createWeatherRecommendation(currentWeather),
+                "/clothing",
+                regions
+        );
+    }
+
+    private WeatherRegionResponse createWeatherRegion(
+            String id,
+            String region,
+            WeatherPageResponse weather
+    ) {
+        CurrentWeatherResponse currentWeather = weather.getCurrentWeather();
+
+        return new WeatherRegionResponse(
+                id,
+                region,
+                formatTemperature(currentWeather.getTemperature()),
+                currentWeather.getWeatherCondition(),
+                createWeatherRecommendation(currentWeather),
+                "/clothing"
+        );
+    }
+
+    private String formatTemperature(double temperature) {
+        return Math.round(temperature) + "°C";
+    }
+
+    private String formatWind(CurrentWeatherResponse currentWeather) {
+        String windStatus = currentWeather.getWindStatus();
+        String windLabel = hasText(windStatus) ? windStatus : "풍속";
+
+        return windLabel + " " + currentWeather.getWindSpeed() + "m/s";
+    }
+
+    private String createWeatherRecommendation(
+            CurrentWeatherResponse currentWeather
+    ) {
+        if (currentWeather.getPrecipitationProbability() >= 40) {
+            return "비 예보가 있어 실내 관광지를 함께 확인해보세요.";
+        }
+
+        return "날씨가 안정적이면 야외 관광과 산책 코스를 함께 계획해보세요.";
+    }
+
     private WeatherResponse createDefaultWeather() {
         return new WeatherResponse(
                 "청주",
@@ -167,6 +272,10 @@ public class MainSummaryService {
                         )
                 )
         );
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private List<FeatureCardResponse> createFeatureCards() {
